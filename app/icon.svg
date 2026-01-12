@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Градиент для свечения -->
+    <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00D9FF;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#00B8E6;stop-opacity:0.9" />
+    </linearGradient>
+    <!-- Фильтр свечения -->
+    <filter id="glow-effect" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Темный фон -->
+  <rect width="1024" height="1024" fill="#000000"/>
+  
+  <!-- Отражение на поверхности (снизу) -->
+  <g opacity="0.4">
+    <path
+      d="M420,650 L580,620 L580,720 L420,750 Z"
+      stroke="url(#glow)"
+      stroke-width="20"
+      fill="none"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      filter="url(#glow-effect)"
+      opacity="0.5"/>
+    <path
+      d="M520,620 L680,590 L680,690 L520,720 Z"
+      stroke="url(#glow)"
+      stroke-width="20"
+      fill="none"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      filter="url(#glow-effect)"
+      opacity="0.5"/>
+    <path
+      d="M420,650 L520,620"
+      stroke="url(#glow)"
+      stroke-width="20"
+      fill="none"
+      stroke-linecap="round"
+      opacity="0.5"/>
+    <path
+      d="M580,620 L680,590"
+      stroke="url(#glow)"
+      stroke-width="20"
+      fill="none"
+      stroke-linecap="round"
+      opacity="0.5"/>
+    <path
+      d="M580,720 L680,690"
+      stroke="url(#glow)"
+      stroke-width="20"
+      fill="none"
+      stroke-linecap="round"
+      opacity="0.5"/>
+    <path
+      d="M420,750 L520,720"
+      stroke="url(#glow)"
+      stroke-width="20"
+      fill="none"
+      stroke-linecap="round"
+      opacity="0.5"/>
+  </g>
+  
+  <!-- Wireframe Cube - основная структура -->
+  <!-- Передняя грань -->
+  <path
+    d="M320,400 L520,350 L520,500 L320,550 Z"
+    stroke="url(#glow)"
+    stroke-width="25"
+    fill="none"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    filter="url(#glow-effect)"/>
+  
+  <!-- Задняя грань (смещена вправо и вверх) -->
+  <path
+    d="M420,350 L620,300 L620,450 L420,500 Z"
+    stroke="url(#glow)"
+    stroke-width="25"
+    fill="none"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    filter="url(#glow-effect)"/>
+  
+  <!-- Соединительные линии (3D перспектива) -->
+  <path
+    d="M320,400 L420,350"
+    stroke="url(#glow)"
+    stroke-width="25"
+    fill="none"
+    stroke-linecap="round"
+    filter="url(#glow-effect)"/>
+  <path
+    d="M520,350 L620,300"
+    stroke="url(#glow)"
+    stroke-width="25"
+    fill="none"
+    stroke-linecap="round"
+    filter="url(#glow-effect)"/>
+  <path
+    d="M520,500 L620,450"
+    stroke="url(#glow)"
+    stroke-width="25"
+    fill="none"
+    stroke-linecap="round"
+    filter="url(#glow-effect)"/>
+  <path
+    d="M320,550 L420,500"
+    stroke="url(#glow)"
+    stroke-width="25"
+    fill="none"
+    stroke-linecap="round"
+    filter="url(#glow-effect)"/>
+  
+  <!-- Вершины с ярким свечением -->
+  <circle cx="320" cy="400" r="8" fill="#FFFFFF" filter="url(#glow-effect)"/>
+  <circle cx="520" cy="350" r="8" fill="#FFFFFF" filter="url(#glow-effect)"/>
+  <circle cx="520" cy="500" r="8" fill="#FFFFFF" filter="url(#glow-effect)"/>
+  <circle cx="320" cy="550" r="8" fill="#FFFFFF" filter="url(#glow-effect)"/>
+  <circle cx="420" cy="350" r="8" fill="#FFFFFF" filter="url(#glow-effect)"/>
+  <circle cx="620" cy="300" r="8" fill="#FFFFFF" filter="url(#glow-effect)"/>
+  <circle cx="620" cy="450" r="8" fill="#FFFFFF" filter="url(#glow-effect)"/>
+  <circle cx="420" cy="500" r="8" fill="#FFFFFF" filter="url(#glow-effect)"/>
+</svg>
+

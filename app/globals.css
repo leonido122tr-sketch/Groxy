@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --background: #0a0a0a;
+  --foreground: #ededed;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+@theme {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* Темная тема установлена по умолчанию */
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans, var(--font-sans, system-ui, -apple-system, sans-serif));
+}
+
+/* Safe-area helpers for mobile (status bar / notch). */
+.pt-safe {
+  padding-top: var(--safe-top);
+}
+
+.pb-safe {
+  padding-bottom: var(--safe-bottom);
+}
+
+/*
+  Use together with pt-safe/pb-safe to keep total height == 100dvh
+  (avoids tiny extra scroll on mobile).
+*/
+.min-h-app {
+  min-height: calc(100dvh - var(--safe-top) - var(--safe-bottom));
+}

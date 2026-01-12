@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="1080dp"
+    android:height="1080dp"
+    android:viewportWidth="1080"
+    android:viewportHeight="1080">
+    
+    <!-- Темный фон -->
+    <path
+        android:pathData="M0,0 L1080,0 L1080,1080 L0,1080 Z"
+        android:fillColor="#0A0A0A" />
+    
+    <!-- Wireframe Cube - 3D perspective -->
+    <!-- Front face -->
+    <path
+        android:pathData="M300,450 L600,350 L600,650 L300,750 Z"
+        android:strokeColor="#00D9FF"
+        android:strokeWidth="30"
+        android:fillColor="#00000000" />
+    
+    <!-- Back face (shifted right and up) -->
+    <path
+        android:pathData="M500,350 L800,250 L800,550 L500,650 Z"
+        android:strokeColor="#00D9FF"
+        android:strokeWidth="30"
+        android:fillColor="#00000000" />
+    
+    <!-- Connecting lines (3D perspective) -->
+    <path
+        android:pathData="M300,450 L500,350"
+        android:strokeColor="#00D9FF"
+        android:strokeWidth="30"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M600,350 L800,250"
+        android:strokeColor="#00D9FF"
+        android:strokeWidth="30"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M600,650 L800,550"
+        android:strokeColor="#00D9FF"
+        android:strokeWidth="30"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M300,750 L500,650"
+        android:strokeColor="#00D9FF"
+        android:strokeWidth="30"
+        android:fillColor="#00000000" />
+    
+    <!-- Glow effect at vertices (circles as paths) -->
+    <path
+        android:pathData="M300,450 A20,20 0 1,1 300,450 A20,20 0 1,1 300,450 Z"
+        android:fillColor="#FFFFFF" />
+    <path
+        android:pathData="M600,350 A20,20 0 1,1 600,350 A20,20 0 1,1 600,350 Z"
+        android:fillColor="#FFFFFF" />
+    <path
+        android:pathData="M600,650 A20,20 0 1,1 600,650 A20,20 0 1,1 600,650 Z"
+        android:fillColor="#FFFFFF" />
+    <path
+        android:pathData="M300,750 A20,20 0 1,1 300,750 A20,20 0 1,1 300,750 Z"
+        android:fillColor="#FFFFFF" />
+    <path
+        android:pathData="M500,350 A20,20 0 1,1 500,350 A20,20 0 1,1 500,350 Z"
+        android:fillColor="#FFFFFF" />
+    <path
+        android:pathData="M800,250 A20,20 0 1,1 800,250 A20,20 0 1,1 800,250 Z"
+        android:fillColor="#FFFFFF" />
+    <path
+        android:pathData="M800,550 A20,20 0 1,1 800,550 A20,20 0 1,1 800,550 Z"
+        android:fillColor="#FFFFFF" />
+    <path
+        android:pathData="M500,650 A20,20 0 1,1 500,650 A20,20 0 1,1 500,650 Z"
+        android:fillColor="#FFFFFF" />
+</vector>
+
