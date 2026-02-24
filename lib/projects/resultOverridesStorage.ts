@@ -29,7 +29,7 @@ export function getFoundationOverridesFromStorage(variant: WallsVariant): Pick<R
   if (typeof window === 'undefined') return empty
   const raw = sessionStorage.getItem(FOUNDATION_KEYS[variant])
   if (raw == null || raw === '') return empty
-  if (variant === '2') {
+  if (variant === '2' || variant === '3' || variant === '4') {
     try {
       const parsed = JSON.parse(raw) as { foundationVolume?: number; foundationReinforcement?: number; foundationHoops?: number }
       return {
@@ -47,13 +47,13 @@ export function getFoundationOverridesFromStorage(variant: WallsVariant): Pick<R
 }
 
 /**
- * Записывает переопределения фундамента в sessionStorage. Для варианта 2 — JSON (объём, арматура, хомуты).
+ * Записывает переопределения фундамента в sessionStorage. Для вариантов 2/3/4 — JSON (объём, арматура, хомуты).
  */
 export function setFoundationOverridesInStorage(variant: WallsVariant, overrides: Partial<Pick<ResultsOverrides, 'foundationVolume' | 'foundationReinforcement' | 'foundationHoops'>>): void {
   if (typeof window === 'undefined') return
   const key = FOUNDATION_KEYS[variant]
-  if (variant === '2') {
-    const current = getFoundationOverridesFromStorage('2')
+  if (variant === '2' || variant === '3' || variant === '4') {
+    const current = getFoundationOverridesFromStorage(variant)
     const next = {
       foundationVolume: overrides.foundationVolume !== undefined ? overrides.foundationVolume : current.foundationVolume,
       foundationReinforcement: overrides.foundationReinforcement !== undefined ? overrides.foundationReinforcement : current.foundationReinforcement,
