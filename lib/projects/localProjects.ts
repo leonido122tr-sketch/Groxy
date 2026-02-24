@@ -1,10 +1,12 @@
 export type Principle = 'inside' | 'outside'
 
 export type Opening = {
-  // legacy: wall could exist in older saves; we don't use it now
-  wall?: 1 | 2
+  /** 1|2 для 2 стен; 1=левая, 2=задняя, 3=правая для 3 стен; 1–4 для 4 стен (по кругу) */
+  wall?: 1 | 2 | 3 | 4
   width: number
   height: number
+  /** Position along wall in meters from start (for plan visualization) */
+  offset?: number
 }
 
 export type Walls2ProjectData = {
@@ -41,6 +43,25 @@ export type Walls4ProjectData = {
   note?: string
 }
 
+/** Данные фундамента (как в sessionStorage): для 2/4 стен — length, width; для 3 стен — left, back, right; общие — height, thickness, principle, concreteGrade? */
+export type FoundationData = Record<string, unknown>
+
+/** Данные крыши при сохранении: для 2 стен — width, length; для 3 стен — left, back, right; общие — height, overhang */
+export type RoofData = Record<string, unknown>
+
+/** Переопределения итоговых расчётов, введённые пользователем вручную */
+export type ResultsOverrides = {
+  wallsArea?: number
+  wallsVolume?: number
+  foundationVolume?: number
+  foundationReinforcement?: number
+  foundationHoops?: number
+  roofArea?: number
+  roofRaftersVolume?: number
+  roofPurlinVolume?: number
+  roofBattenVolume?: number
+}
+
 export type LocalProject =
   | {
       id: string
@@ -49,7 +70,13 @@ export type LocalProject =
       updatedAt: string
       type: 'walls_2'
       data: Walls2ProjectData
+      pdfFilename?: string
       platform?: 'android' | 'web'
+      pdfComment?: string
+      notes?: string
+      foundation?: FoundationData
+      roof?: RoofData
+      resultsOverrides?: ResultsOverrides
     }
   | {
       id: string
@@ -58,7 +85,13 @@ export type LocalProject =
       updatedAt: string
       type: 'walls_3'
       data: Walls3ProjectData
+      pdfFilename?: string
       platform?: 'android' | 'web'
+      pdfComment?: string
+      notes?: string
+      foundation?: FoundationData
+      roof?: RoofData
+      resultsOverrides?: ResultsOverrides
     }
   | {
       id: string
@@ -67,7 +100,13 @@ export type LocalProject =
       updatedAt: string
       type: 'walls_4'
       data: Walls4ProjectData
+      pdfFilename?: string
       platform?: 'android' | 'web'
+      pdfComment?: string
+      notes?: string
+      foundation?: FoundationData
+      roof?: RoofData
+      resultsOverrides?: ResultsOverrides
     }
 
 // Backwards compatibility for earlier stored shape
@@ -77,31 +116,29 @@ export type LegacyLocalProject = {
   createdAt: string
   updatedAt: string
   type: 'walls_2' | 'walls_3' | 'walls_4'
-  data: any
+  data: Record<string, unknown>
 }
 
 const STORAGE_KEY = 'groxy.projects.v1'
 
-function normalizeProject(p: any): LocalProject | null {
-  if (!p?.id || !p?.name || !p?.type || !p?.data) return null
-  if (p.type === 'walls_2') {
-    const d = p.data
+function normalizeProject(p: unknown): LocalProject | null {
+  if (!p || typeof p !== 'object') return null
+  const o = p as Record<string, unknown>
+  if (!o.id || !o.name || !o.type || !o.data) return null
+  if (o.type === 'walls_2') {
+    const d = o.data as Record<string, unknown>
     if (typeof d?.width !== 'number' || typeof d?.length !== 'number') return null
-    return p as LocalProject
+    return o as unknown as LocalProject
   }
-  if (p.type === 'walls_3') {
-    const d = p.data
+  if (o.type === 'walls_3') {
+    const d = o.data as Record<string, unknown>
     if (typeof d?.left !== 'number' || typeof d?.back !== 'number' || typeof d?.right !== 'number') return null
-    return p as LocalProject
+    return o as unknown as LocalProject
   }
-  if (p.type === 'walls_4') {
-    const d = p.data
-    if (
-      typeof d?.width !== 'number' ||
-      typeof d?.length !== 'number'
-    )
-      return null
-    return p as LocalProject
+  if (o.type === 'walls_4') {
+    const d = o.data as Record<string, unknown>
+    if (typeof d?.width !== 'number' || typeof d?.length !== 'number') return null
+    return o as unknown as LocalProject
   }
   return null
 }
