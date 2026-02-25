@@ -110,6 +110,7 @@ export function DetailPlanWallsWalls4({ project, onOpeningsChange, onClose }: Pr
   const wallLen3 = w
   const wallLen4 = l
 
+  // Логика сегментов и внешних длин привязана к внутренним размерам (например 10×10 м: width/length — внутренние, w/l — внешние при principle inside).
   const wall1Openings = openings.filter((o) => (o.wall ?? 1) === 1).sort((a, b) => (a.offset ?? 0) - (b.offset ?? 0))
   const wall2Openings = openings.filter((o) => (o.wall ?? 1) === 2).sort((a, b) => (a.offset ?? 0) - (b.offset ?? 0))
   const wall3Openings = openings.filter((o) => (o.wall ?? 1) === 3).sort((a, b) => (a.offset ?? 0) - (b.offset ?? 0))
