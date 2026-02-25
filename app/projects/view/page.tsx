@@ -1607,10 +1607,10 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
           try {
             const raw = sessionStorage.getItem('currentProjectData_walls_4')
             if (raw) {
-              const parsed = JSON.parse(raw) as { projectId?: string; width?: number; length?: number; height?: number; thickness?: number; openings?: unknown[] }
+              const parsed = JSON.parse(raw) as { projectId?: string; width?: number; length?: number; height?: number; thickness?: number; openings?: unknown[]; principle?: string }
               const belongsToCurrentProject = parsed?.projectId === project.id
-              if (belongsToCurrentProject && parsed && (parsed.width !== undefined || parsed.length !== undefined || Array.isArray(parsed.openings))) {
-                const d = project.data as { width: number; length: number; height: number; thickness: number; openings?: Opening[] }
+              if (belongsToCurrentProject && parsed && (parsed.width !== undefined || parsed.length !== undefined || Array.isArray(parsed.openings) || parsed.principle !== undefined)) {
+                const d = project.data as { width: number; length: number; height: number; thickness: number; openings?: Opening[]; principle?: 'inside' | 'outside' }
                 data = {
                   ...project.data,
                   width: Number(parsed.width) > 0 ? Number(parsed.width) : (d.width ?? 0),
@@ -1618,6 +1618,7 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
                   height: Number(parsed.height) > 0 ? Number(parsed.height) : (d.height ?? 0),
                   thickness: Number(parsed.thickness) > 0 ? Number(parsed.thickness) : (d.thickness ?? 0),
                   openings: Array.isArray(parsed.openings) ? (parsed.openings as Opening[]) : (d.openings ?? []),
+                  principle: (parsed.principle === 'inside' || parsed.principle === 'outside') ? parsed.principle : (d.principle ?? 'inside'),
                 }
               }
             }
@@ -1676,22 +1677,26 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
         let length = Number((project.roof as { length?: number })?.length) || Number(project.data.length) || 5
         let overhang = Number((project.roof as { overhang?: number })?.overhang) ?? 0.4
         let height = Number((project.roof as { height?: number })?.height) ?? 0.5
+        let roofType: 'single' | 'gable' = 'single'
+        let ridgeAlongLength = true
         if (typeof window !== 'undefined') {
           try {
             const raw = sessionStorage.getItem('currentProjectData_roof_4')
             if (raw) {
-              const d = JSON.parse(raw) as { width?: number; length?: number; overhang?: number; height?: number }
+              const d = JSON.parse(raw) as { width?: number; length?: number; overhang?: number; height?: number; type?: string; ridgeAlongLength?: boolean }
               if (Number(d.width) > 0) width = Number(d.width)
               if (Number(d.length) > 0) length = Number(d.length)
               if (Number(d.overhang) >= 0) overhang = Number(d.overhang)
               if (Number(d.height) >= 0) height = Number(d.height)
+              if (d.type === 'gable') roofType = 'gable'
+              if (typeof d.ridgeAlongLength === 'boolean') ridgeAlongLength = d.ridgeAlongLength
             }
           } catch {
             // ignore
           }
         }
         return (
-          <DetailPlanRoofWalls4 width={width} length={length} overhang={overhang} height={height} onClose={closeDetailView} />
+          <DetailPlanRoofWalls4 width={width} length={length} overhang={overhang} height={height} roofType={roofType} ridgeAlongLength={ridgeAlongLength} onClose={closeDetailView} />
         )
       })()}
 

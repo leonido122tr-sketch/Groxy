@@ -31,8 +31,8 @@ export function DetailPlanWallsWalls4({ project, onOpeningsChange, onClose }: Pr
   const t = Math.max(0.05, Number(data.thickness) ?? 0.25)
   const W = Math.max(0.1, Number(data.width) || 5)
   const L = Math.max(0.1, Number(data.length) || 5)
-  const w = isInside ? W + t : W
-  const l = isInside ? L + t : L
+  const w = isInside ? W + 2 * t : W
+  const l = isInside ? L + 2 * t : L
 
   const [openings, setOpenings] = useState<Opening[]>(() => {
     const list = Array.isArray(data.openings) ? data.openings : []
@@ -100,10 +100,12 @@ export function DetailPlanWallsWalls4({ project, onOpeningsChange, onClose }: Pr
   const inHorLineY = tPx + INNER_DIM_OFFSET
   const inHorTextY = tPx + INNER_DIM_OFFSET + 35
   const inHorEndX = totalW - tPx
-  const inHorCenterX = inHorEndX / 2
+  const inHorCenterX = (tPx + inHorEndX) / 2
   const inVertLineX = tPx + INNER_DIM_OFFSET
   const inVertTextX = tPx + INNER_DIM_OFFSET + 40
-  const inVertTextY = (totalH - tPx) / 2 + tPx
+  const inVertTextY = (tPx + (totalH - tPx)) / 2
+  const innerDimW = isInside ? W : w - 2 * t
+  const innerDimL = isInside ? L : l - 2 * t
 
   const wallLen1 = w
   const wallLen2 = l
@@ -380,9 +382,9 @@ export function DetailPlanWallsWalls4({ project, onOpeningsChange, onClose }: Pr
               </g>
               <g fill="none" stroke="#44403c" strokeWidth="1" fontSize={fontSz} fontFamily="system-ui, sans-serif" aria-label="Внутренние размеры">
                 <path d={`M ${tPx - tick45} ${inHorLineY + tick45} L ${tPx + tick45} ${inHorLineY - tick45} M ${inHorEndX - tick45} ${inHorLineY + tick45} L ${inHorEndX + tick45} ${inHorLineY - tick45} M ${tPx} ${inHorLineY} L ${inHorEndX} ${inHorLineY}`} />
-                <text x={inHorCenterX} y={inHorTextY} textAnchor="middle" fill="#292524">{fmtRu(w - t)} м</text>
+                <text x={inHorCenterX} y={inHorTextY} textAnchor="middle" fill="#292524">{fmtRu(innerDimW)} м</text>
                 <path d={`M ${inVertLineX - tick45} ${totalH - tPx - tick45} L ${inVertLineX + tick45} ${totalH - tPx + tick45} M ${inVertLineX - tick45} ${tPx - tick45} L ${inVertLineX + tick45} ${tPx + tick45} M ${inVertLineX} ${totalH - tPx} L ${inVertLineX} ${tPx}`} />
-                <text x={inVertTextX} y={inVertTextY} textAnchor="middle" fill="#292524" transform={`rotate(-90, ${inVertTextX}, ${inVertTextY})`}>{fmtRu(l - t)} м</text>
+                <text x={inVertTextX} y={inVertTextY} textAnchor="middle" fill="#292524" transform={`rotate(-90, ${inVertTextX}, ${inVertTextY})`}>{fmtRu(innerDimL)} м</text>
               </g>
               <g fill="none" stroke="#44403c" strokeWidth="1" fontSize={fontSz} fontFamily="system-ui, sans-serif" aria-label="Размеры сегментов">
                 {wall1Openings.length > 0 && segments1.map((seg, i) => {
