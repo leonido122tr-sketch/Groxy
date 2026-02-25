@@ -1319,14 +1319,6 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
                 <Download className="h-5 w-5" />
                 {isPdfSaved && !isDirtyEffective ? 'Открыть PDF' : 'Сохранить в PDF'}
               </button>
-              <Link
-                href={`/demo-3d?id=${encodeURIComponent(project.id)}`}
-                className="inline-flex items-center justify-center gap-2 w-full rounded-xl border border-white/20 bg-white/5 px-6 py-4 text-base font-semibold text-zinc-200 transition-colors hover:bg-white/10 sm:flex-1"
-              >
-                <Box className="h-5 w-5" />
-                Смотреть в 3Д
-              </Link>
-
               <label className="inline-flex items-center gap-2 text-sm text-zinc-300">
                 <input
                   type="checkbox"
@@ -1380,7 +1372,23 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
                   <Walls3Calculator mode="edit" projectId={project.id} initialProject={project} embedInView onSchemaClick={() => openDetailView('walls')} />
                 )}
                 {project.type === 'walls_4' && (
-                  <Walls4Calculator mode="edit" projectId={project.id} initialProject={project} embedInView onSchemaClick={() => openDetailView('walls')} />
+                  <Walls4Calculator
+                    mode="edit"
+                    projectId={project.id}
+                    initialProject={project}
+                    embedInView
+                    onSchemaClick={() => openDetailView('walls')}
+                    onOpeningsChange={(nextOpenings) => {
+                      const nextData = { ...project.data, openings: nextOpenings }
+                      const next = { ...project, data: nextData }
+                      onProjectUpdated?.(next)
+                      if (typeof window !== 'undefined') {
+                        sessionStorage.setItem('projectIsDirty', 'true')
+                        sessionStorage.setItem('currentProjectData_walls_4', JSON.stringify({ ...nextData, projectId: project.id }))
+                        window.dispatchEvent(new CustomEvent('projectDataChanged'))
+                      }
+                    }}
+                  />
                 )}
                 {project.type === 'walls_2' && (
                   <WallsCalculator mode="edit" projectId={project.id} initialProject={project} embedInView onSchemaClick={() => openDetailView('walls')} />
@@ -1599,8 +1607,9 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
           try {
             const raw = sessionStorage.getItem('currentProjectData_walls_4')
             if (raw) {
-              const parsed = JSON.parse(raw) as { width?: number; length?: number; height?: number; thickness?: number; openings?: unknown[] }
-              if (parsed && (parsed.width !== undefined || parsed.length !== undefined || Array.isArray(parsed.openings))) {
+              const parsed = JSON.parse(raw) as { projectId?: string; width?: number; length?: number; height?: number; thickness?: number; openings?: unknown[] }
+              const belongsToCurrentProject = parsed?.projectId === project.id
+              if (belongsToCurrentProject && parsed && (parsed.width !== undefined || parsed.length !== undefined || Array.isArray(parsed.openings))) {
                 const d = project.data as { width: number; length: number; height: number; thickness: number; openings?: Opening[] }
                 data = {
                   ...project.data,
@@ -1617,7 +1626,24 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
           }
         }
         const projectWithStorage = { ...project, data } as Extract<LocalProject, { type: 'walls_4' }>
-        return <DetailPlanWallsWalls4 project={projectWithStorage} onClose={closeDetailView} />
+        return (
+          <DetailPlanWallsWalls4
+            project={projectWithStorage}
+            onOpeningsChange={(nextOpenings) => {
+              const nextData = { ...projectWithStorage.data, openings: nextOpenings }
+              const updated = { ...projectWithStorage, data: nextData }
+              onProjectUpdated?.(updated)
+              if (typeof window !== 'undefined') {
+                try {
+                  sessionStorage.setItem('currentProjectData_walls_4', JSON.stringify({ ...nextData, projectId: project.id }))
+                } catch {
+                  // ignore
+                }
+              }
+            }}
+            onClose={closeDetailView}
+          />
+        )
       })()}
 
       {detailView === 'roof' && project.type === 'walls_3' && (() => {
