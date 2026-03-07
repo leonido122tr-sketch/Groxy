@@ -7,11 +7,14 @@ import Link from 'next/link'
 import { AppHeader } from '@/app/components/AppHeader'
 import { PageLoader } from '@/app/components/PageLoader'
 import type { User } from '@supabase/supabase-js'
+import { KNOWLEDGE_PAGES } from '@/lib/knowledge/constants'
 
-export default function CommunityPage() {
+export function KnowledgeTopicClient({ slug }: { slug: string }) {
   const router = useRouter()
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+
+  const page = slug ? KNOWLEDGE_PAGES[slug] : null
 
   useEffect(() => {
     const AUTH_CHECK_TIMEOUT_MS = 8000
@@ -64,6 +67,19 @@ export default function CommunityPage() {
 
   if (loading) return <PageLoader />
   if (!user) return <PageLoader message="Перенаправление..." />
+  if (!page) {
+    return (
+      <div className="relative flex min-h-screen flex-col overflow-hidden bg-black font-sans text-white pt-safe">
+        <AppHeader />
+        <main className="relative z-10 mx-auto w-full max-w-md flex-1 px-4 pt-3 pb-6 sm:px-6 lg:px-8">
+          <p className="text-zinc-400">Раздел не найден.</p>
+          <Link href="/knowledge" className="mt-4 inline-block text-sm text-white/80 underline hover:text-white">
+            В базу знаний
+          </Link>
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div className="relative flex min-h-screen flex-col overflow-hidden bg-black font-sans text-white pt-safe">
@@ -73,23 +89,11 @@ export default function CommunityPage() {
       </div>
       <AppHeader />
       <main className="relative z-10 mx-auto w-full max-w-md flex-1 px-4 pt-3 pb-6 sm:px-6 lg:px-8">
-        <h2 className="text-2xl font-bold text-white">Сообщество</h2>
-        <p className="mt-1 text-sm text-zinc-400">Поделиться опытом, задать вопрос, обсудить с другими</p>
+        <h2 className="text-2xl font-bold text-white">{page.title}</h2>
+        <p className="mt-1 text-sm text-zinc-400">{page.description}</p>
 
-        <Link
-          href="/forum"
-          className="mt-4 flex items-center gap-4 rounded-2xl border border-white/10 bg-white/5 px-5 py-4 transition-all duration-200 hover:border-white/20 hover:bg-white/10 active:scale-[0.99]"
-        >
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/5 ring-1 ring-white/10">
-            <svg className="h-5 w-5 text-white/90" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-            </svg>
-          </span>
-          <span className="text-base font-medium text-white">Форум</span>
-        </Link>
-
-        <Link href="/dashboard" className="mt-6 inline-block text-sm text-white/80 underline hover:text-white">
-          На главную
+        <Link href="/knowledge" className="mt-6 inline-block text-sm text-white/80 underline hover:text-white">
+          Назад в базу знаний
         </Link>
       </main>
     </div>

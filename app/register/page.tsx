@@ -153,8 +153,17 @@ export default function RegisterPage() {
 
       // Код подтвержден, регистрация завершена
       // Пользователь автоматически авторизован после подтверждения кода
-      console.log('Регистрация завершена:', data)
-      
+      if (data?.user) {
+        await supabase.from('profiles').upsert(
+          {
+            идентификатор: data.user.id,
+            электронная_почта: data.user.email ?? '',
+            отображаемое_имя: data.user.user_metadata?.full_name ?? null,
+            обновлено_в: new Date().toISOString(),
+          },
+          { onConflict: 'идентификатор' }
+        )
+      }
       // Перенаправляем на страницу настройки профиля
       router.push('/profile/setup')
       router.refresh()
@@ -396,6 +405,11 @@ export default function RegisterPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                 </svg>
                 На главную
+              </Link>
+            </p>
+            <p className="text-center">
+              <Link href="/privacy" className="text-sm text-zinc-500 hover:text-zinc-400">
+                Политика конфиденциальности
               </Link>
             </p>
           </div>

@@ -282,6 +282,11 @@ export default function LoginPage() {
                 На главную
               </Link>
             </p>
+            <p className="text-center">
+              <Link href="/privacy" className="text-sm text-zinc-500 hover:text-zinc-400">
+                Политика конфиденциальности
+              </Link>
+            </p>
           </div>
         </div>
       </main>

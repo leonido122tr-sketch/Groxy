@@ -23,10 +23,30 @@ export default function ProfileSetupPage() {
       try {
         const { data: { user: u } } = await supabase.auth.getUser()
         setUser(u ?? null)
-        if (u?.user_metadata?.full_name) setFullName(u.user_metadata.full_name)
         if (u?.email) setEmail(u.email)
         if (u?.user_metadata?.phone) setPhone(String(u.user_metadata.phone))
         if (!u) router.push('/login')
+        else {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('отображаемое_имя')
+            .eq('идентификатор', u.id)
+            .single()
+          setFullName(
+            (profile as { отображаемое_имя?: string | null } | null)?.отображаемое_имя?.trim() ||
+              u.user_metadata?.full_name ||
+              ''
+          )
+          await supabase.from('profiles').upsert(
+            {
+              идентификатор: u.id,
+              электронная_почта: u.email ?? '',
+              отображаемое_имя: u.user_metadata?.full_name ?? null,
+              обновлено_в: new Date().toISOString(),
+            },
+            { onConflict: 'идентификатор' }
+          )
+        }
       } catch (err: unknown) {
         if (isSupabaseNetworkError(err)) {
           setError('Нет связи с сервером. Проверьте интернет.')
@@ -67,6 +87,18 @@ export default function ProfileSetupPage() {
       })
 
       if (metaError) throw metaError
+
+      if (user?.id) {
+        await supabase.from('profiles').upsert(
+          {
+            идентификатор: user.id,
+            отображаемое_имя: fullName.trim() || null,
+            электронная_почта: trimmedEmail,
+            обновлено_в: new Date().toISOString(),
+          },
+          { onConflict: 'идентификатор' }
+        )
+      }
 
       router.push('/dashboard')
       router.refresh()

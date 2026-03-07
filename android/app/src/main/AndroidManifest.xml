@@ -38,6 +38,8 @@
         </provider>
     </application>
 
-    <!-- Permissions: только INTERNET. Сохранение/открытие PDF и проектов — через app-specific storage (getFilesDir) и FileProvider, без доступа к общему хранилищу (соответствует политике Google Play: No All files access). -->
+    <!-- INTERNET — сеть. READ_MEDIA_IMAGES / READ_EXTERNAL_STORAGE — выбор фото для загрузки в форум (галерея). -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 </manifest>

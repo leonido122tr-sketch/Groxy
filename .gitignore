@@ -57,3 +57,11 @@ android/app/debug/
 
 # Capacitor
 .capacitor/
+
+# IDE / debug / артефакты
+.cursor/
+debug.log
+*.zip
+groxy_pdf_test*.mp4
+hs_err_pid*.log
+uidump.xml
