@@ -55,9 +55,9 @@ export function setFoundationOverridesInStorage(variant: WallsVariant, overrides
   if (variant === '2' || variant === '3' || variant === '4') {
     const current = getFoundationOverridesFromStorage(variant)
     const next = {
-      foundationVolume: overrides.foundationVolume !== undefined ? overrides.foundationVolume : current.foundationVolume,
-      foundationReinforcement: overrides.foundationReinforcement !== undefined ? overrides.foundationReinforcement : current.foundationReinforcement,
-      foundationHoops: overrides.foundationHoops !== undefined ? overrides.foundationHoops : current.foundationHoops,
+      foundationVolume: Object.prototype.hasOwnProperty.call(overrides, 'foundationVolume') ? overrides.foundationVolume : current.foundationVolume,
+      foundationReinforcement: Object.prototype.hasOwnProperty.call(overrides, 'foundationReinforcement') ? overrides.foundationReinforcement : current.foundationReinforcement,
+      foundationHoops: Object.prototype.hasOwnProperty.call(overrides, 'foundationHoops') ? overrides.foundationHoops : current.foundationHoops,
     }
     const hasAny = next.foundationVolume != null || next.foundationReinforcement != null || next.foundationHoops != null
     if (hasAny) {
@@ -98,11 +98,14 @@ export function getWallsOverridesFromStorage(variant: WallsVariant): Pick<Result
 export function setWallsOverridesInStorage(variant: WallsVariant, overrides: Partial<Pick<ResultsOverrides, 'wallsArea' | 'wallsVolume'>>): void {
   if (typeof window === 'undefined') return
   const key = WALLS_KEYS[variant]
-  if (overrides.wallsArea == null && overrides.wallsVolume == null) {
+  const current = getWallsOverridesFromStorage(variant)
+  const wallsArea = Object.prototype.hasOwnProperty.call(overrides, 'wallsArea') ? overrides.wallsArea : current.wallsArea
+  const wallsVolume = Object.prototype.hasOwnProperty.call(overrides, 'wallsVolume') ? overrides.wallsVolume : current.wallsVolume
+  if (wallsArea == null && wallsVolume == null) {
     sessionStorage.removeItem(key)
     return
   }
-  sessionStorage.setItem(key, JSON.stringify({ wallsArea: overrides.wallsArea, wallsVolume: overrides.wallsVolume }))
+  sessionStorage.setItem(key, JSON.stringify({ wallsArea: wallsArea ?? null, wallsVolume: wallsVolume ?? null }))
 }
 
 export type RoofOverrides2 = Pick<ResultsOverrides, 'roofArea' | 'roofRaftersVolume' | 'roofPurlinVolume' | 'roofBattenVolume'>
@@ -115,7 +118,7 @@ export function getRoofOverridesFromStorage(variant: WallsVariant): Partial<Roof
   if (typeof window === 'undefined') return empty
   const raw = sessionStorage.getItem(ROOF_KEYS[variant])
   if (raw == null || raw === '') return empty
-  if (variant === '2') {
+  if (variant === '2' || variant === '3' || variant === '4') {
     try {
       const parsed = JSON.parse(raw) as { roofArea?: number; roofRaftersVolume?: number; roofPurlinVolume?: number; roofBattenVolume?: number }
       const num = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined
@@ -140,13 +143,13 @@ export function getRoofOverridesFromStorage(variant: WallsVariant): Partial<Roof
 export function setRoofOverridesInStorage(variant: WallsVariant, overrides: Partial<RoofOverrides2>): void {
   if (typeof window === 'undefined') return
   const key = ROOF_KEYS[variant]
-  if (variant === '2') {
-    const current = getRoofOverridesFromStorage('2')
+  if (variant === '2' || variant === '3' || variant === '4') {
+    const current = getRoofOverridesFromStorage(variant)
     const next: RoofOverrides2 = {
-      roofArea: overrides.roofArea !== undefined ? overrides.roofArea : current.roofArea,
-      roofRaftersVolume: overrides.roofRaftersVolume !== undefined ? overrides.roofRaftersVolume : current.roofRaftersVolume,
-      roofPurlinVolume: overrides.roofPurlinVolume !== undefined ? overrides.roofPurlinVolume : current.roofPurlinVolume,
-      roofBattenVolume: overrides.roofBattenVolume !== undefined ? overrides.roofBattenVolume : current.roofBattenVolume,
+      roofArea: Object.prototype.hasOwnProperty.call(overrides, 'roofArea') ? overrides.roofArea : current.roofArea,
+      roofRaftersVolume: Object.prototype.hasOwnProperty.call(overrides, 'roofRaftersVolume') ? overrides.roofRaftersVolume : current.roofRaftersVolume,
+      roofPurlinVolume: Object.prototype.hasOwnProperty.call(overrides, 'roofPurlinVolume') ? overrides.roofPurlinVolume : current.roofPurlinVolume,
+      roofBattenVolume: Object.prototype.hasOwnProperty.call(overrides, 'roofBattenVolume') ? overrides.roofBattenVolume : current.roofBattenVolume,
     }
     const hasAny = next.roofArea != null || next.roofRaftersVolume != null || next.roofPurlinVolume != null || next.roofBattenVolume != null
     if (hasAny) {
@@ -180,6 +183,17 @@ export function getFoundationRoofOverridesFromStorage(variant: WallsVariant): Pa
   if (rOverrides.roofPurlinVolume != null) out.roofPurlinVolume = rOverrides.roofPurlinVolume
   if (rOverrides.roofBattenVolume != null) out.roofBattenVolume = rOverrides.roofBattenVolume
   return out
+}
+
+/**
+ * Очищает переопределения итогов для одного варианта (2/3/4 стены).
+ * Вызывать при открытии проекта без сохранённых переопределений, чтобы не подставлять старые значения из сессии.
+ */
+export function clearResultOverridesForVariant(variant: WallsVariant): void {
+  if (typeof window === 'undefined') return
+  sessionStorage.removeItem(FOUNDATION_KEYS[variant])
+  sessionStorage.removeItem(ROOF_KEYS[variant])
+  sessionStorage.removeItem(WALLS_KEYS[variant])
 }
 
 /**

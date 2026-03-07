@@ -56,7 +56,6 @@ function MaterialSelector({
 }) {
   return (
     <div className="relative">
-      <label className="mb-1 block text-sm font-medium text-zinc-300">{label}</label>
       <div className="rounded-2xl border border-white/10 bg-white/5">
         <input
           type="text"
@@ -67,7 +66,7 @@ function MaterialSelector({
           }}
           onFocus={() => onOpenChange(true)}
           onBlur={() => setTimeout(() => onOpenChange(false), 180)}
-          placeholder="Введите название или выберите из списка"
+          placeholder={label}
           className="w-full rounded-2xl border-0 bg-transparent px-3 py-3 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-white/20"
         />
         <button
@@ -92,7 +91,10 @@ function MaterialSelector({
                 <li key={m.id}>
                   <button
                     type="button"
-                    onClick={() => onSelect(m)}
+                    onPointerDown={(e) => {
+                      e.preventDefault()
+                      onSelect(m)
+                    }}
                     className="w-full px-4 py-2.5 text-left text-sm text-white hover:bg-white/10"
                   >
                     {m.name}

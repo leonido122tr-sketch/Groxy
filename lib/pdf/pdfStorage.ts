@@ -12,7 +12,7 @@ function uint8ArrayToBase64(bytes: Uint8Array): string {
   return btoa(binary)
 }
 
-async function ensurePdfDir(directory: any) {
+async function ensurePdfDir(directory: import('@capacitor/filesystem').Directory) {
   if (!Capacitor.isNativePlatform()) return
   const { Filesystem } = await import('@capacitor/filesystem')
   
@@ -24,17 +24,34 @@ async function ensurePdfDir(directory: any) {
       recursive: true 
     })
     console.log('Директория PDF создана/проверена:', PDFS_DIR)
-  } catch (error: any) {
+  } catch (error: unknown) {
     // On Android, mkdir may throw even when the directory already exists.
     // Treat "already exists" as success.
-    const code = error?.code
-    const msg = String(error?.message ?? '')
+    const err = error as { code?: string; message?: string }
+    const code = err?.code
+    const msg = String(err?.message ?? '')
     if (code === 'OS-PLUG-FILE-0010' || msg.toLowerCase().includes('already exists') || msg.toLowerCase().includes('exists')) {
       console.log('Директория PDF уже существует:', PDFS_DIR)
       return
     }
     console.warn('Ошибка создания директории PDF:', error)
     throw error
+  }
+}
+
+/** На Android возвращает { uri, path } сохранённого PDF по имени файла из папки Groxy/pdfs, иначе null */
+export function getSavedPdfUri(filename: string): { uri: string; path: string } | null {
+  if (typeof window === 'undefined') return null
+  if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== 'android') return null
+  const nativeStorage = (window as { NativeStorage?: { getPdfUri: (name: string) => string } }).NativeStorage
+  if (!nativeStorage || typeof nativeStorage.getPdfUri !== 'function') return null
+  try {
+    const resultStr = nativeStorage.getPdfUri(filename)
+    const result = JSON.parse(resultStr) as { uri?: string; path?: string; error?: string }
+    if (result.error || !result.uri || !result.path) return null
+    return { uri: result.uri, path: result.path }
+  } catch {
+    return null
   }
 }
 
@@ -55,7 +72,7 @@ export async function savePdfToDevice(filename: string, bytes: Uint8Array): Prom
       console.log('Base64 данные подготовлены, длина:', base64Data.length)
       
       // Проверяем наличие интерфейса
-      const nativeStorage = (window as any).NativeStorage
+      const nativeStorage = (window as Window & { NativeStorage?: { savePdf: (name: string, data: string) => string } }).NativeStorage
       if (!nativeStorage) {
         throw new Error('NativeStorage JavaScript Interface не найден')
       }
@@ -89,11 +106,12 @@ export async function savePdfToDevice(filename: string, bytes: Uint8Array): Prom
       // Возвращаем объект с uri и path для использования в FileOpener
       // path работает более надёжно с FileOpener, чем content:// URI
       return { uri: result.uri, path: result.path }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as { message?: string; stack?: string }
       console.error('Ошибка сохранения PDF через JavaScript Interface:', {
-        message: error?.message,
-        stack: error?.stack,
-        error: error,
+        message: err?.message,
+        stack: err?.stack,
+        error,
         errorString: String(error),
       })
       throw error
@@ -127,7 +145,7 @@ export async function savePdfToDevice(filename: string, bytes: Uint8Array): Prom
 
       console.log('PDF успешно сохранён через Filesystem:', fileUri.uri)
       return fileUri.uri
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Ошибка сохранения PDF через Filesystem:', error)
       throw error
     }
@@ -185,18 +203,21 @@ export async function openPdfFromDevice(
       })
       console.log('FileOpener.openFile успешно вызван на Android')
       return
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Ошибка открытия PDF через FileOpener на Android:', error)
       
-      // Запасной вариант: используем Share для выбора приложения
+      // Запасной вариант: используем Share. Capacitor принимает только file:// или http.
       try {
         const { Share } = await import('@capacitor/share')
-        console.log('Запасной вариант: используем Share.share на Android')
-        await Share.share({ 
-          title: 'PDF Проект',
-          url: uri, 
-          dialogTitle: 'Открыть PDF через...' 
-        })
+        const shareUrl = opts?.filePath ? `file://${opts.filePath}` : (uri.startsWith('file://') || uri.startsWith('http') ? uri : null)
+        if (shareUrl) {
+          console.log('Запасной вариант: используем Share.share на Android')
+          await Share.share({ 
+            title: 'PDF Проект',
+            url: shareUrl, 
+            dialogTitle: 'Открыть PDF через...' 
+          })
+        }
         return
       } catch (shareError) {
         console.error('Ошибка открытия PDF через Share на Android:', shareError)
@@ -218,7 +239,7 @@ export async function openPdfFromDevice(
       })
       console.log('FileOpener.openFile успешно вызван на iOS')
       return
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Ошибка открытия PDF через FileOpener на iOS:', error)
       
       // Если плагин не сработал, пробуем Share как запасной вариант

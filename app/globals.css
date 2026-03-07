@@ -5,6 +5,31 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --background: #0a0a0a;
   --foreground: #ededed;
+  
+  /* Modern color palette */
+  --primary: #3b82f6;
+  --primary-light: #60a5fa;
+  --primary-dark: #2563eb;
+  --accent: #8b5cf6;
+  --accent-light: #a78bfa;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  
+  /* Glass morphism */
+  --glass-bg: rgba(255, 255, 255, 0.05);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-shadow: rgba(0, 0, 0, 0.1);
+
+  /* Design tokens: radii (use consistently) */
+  --radius-sm: 0.75rem;   /* rounded-xl - inputs, small buttons */
+  --radius-md: 1rem;      /* rounded-2xl - cards */
+  --radius-lg: 1.5rem;    /* rounded-3xl - page containers */
+
+  /* Spacing scale (4/6/8/10) */
+  --space-form-gap: 1.25rem;   /* gap between form fields - space-y-5 */
+  --space-section: 2rem;      /* mb-8 between sections */
+  --space-card: 1.5rem;      /* p-6 card padding */
 }
 
 html,
@@ -17,6 +42,13 @@ body {
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  
+  /* Custom colors for Tailwind */
+  --color-primary: var(--primary);
+  --color-primary-light: var(--primary-light);
+  --color-primary-dark: var(--primary-dark);
+  --color-accent: var(--accent);
+  --color-accent-light: var(--accent-light);
 }
 
 /* Темная тема установлена по умолчанию */
@@ -33,6 +65,31 @@ body {
   font-family: var(--font-geist-sans, var(--font-sans, system-ui, -apple-system, sans-serif));
 }
 
+/* Native app shell keeps content below status bar. */
+body.native-app {
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.app-shell {
+  min-height: 100dvh;
+}
+
+.native-app .app-shell {
+  position: fixed;
+  inset: 0;
+  padding-top: max(var(--safe-top), 24px);
+  padding-bottom: var(--safe-bottom);
+  box-sizing: border-box;
+  background: var(--background);
+}
+
+.native-app .app-scroll {
+  height: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* Safe-area helpers for mobile (status bar / notch). */
 .pt-safe {
   padding-top: var(--safe-top);
@@ -42,10 +99,176 @@ body {
   padding-bottom: var(--safe-bottom);
 }
 
+/* Android WebView sometimes reports 0 safe inset — add minimum top padding. */
+.native-app .pt-safe {
+  padding-top: max(var(--safe-top), 24px);
+}
+
+/* Avoid double safe padding inside main scroll container. */
+.native-app .app-scroll .pt-safe {
+  padding-top: 0;
+}
+
+/* Keep PDF overlay below status bar on native. */
+.native-app .pdf-overlay {
+  top: max(var(--safe-top), 24px);
+  bottom: var(--safe-bottom);
+}
+
 /*
   Use together with pt-safe/pb-safe to keep total height == 100dvh
   (avoids tiny extra scroll on mobile).
 */
 .min-h-app {
   min-height: calc(100dvh - var(--safe-top) - var(--safe-bottom));
+}
+
+.native-app .min-h-app {
+  min-height: calc(100dvh - max(var(--safe-top), 24px) - var(--safe-bottom));
+}
+
+/* Modern utility classes */
+.glass {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.glass-strong {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+.gradient-primary {
+  background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+}
+
+.gradient-accent {
+  background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
+}
+
+.gradient-success {
+  background: linear-gradient(135deg, #10b981 0%, #3b82f6 100%);
+}
+
+.text-gradient {
+  background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.shadow-glow {
+  box-shadow: 0 0 40px rgba(59, 130, 246, 0.3);
+}
+
+.shadow-glow-accent {
+  box-shadow: 0 0 40px rgba(139, 92, 246, 0.3);
+}
+
+/* Smooth transitions */
+* {
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Button animations */
+.btn-hover {
+  transition: all 0.3s ease;
+}
+
+.btn-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+.btn-hover:active {
+  transform: translateY(0);
+}
+
+/* Typography scale - use for consistency */
+.heading-page {
+  font-size: 1.875rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--foreground);
+}
+.heading-section {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--foreground);
+}
+.heading-block {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+/* Unified form input style - use across all auth/settings pages */
+.input-base {
+  width: 100%;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.4);
+  padding: 0.75rem 1rem;
+  color: var(--foreground);
+  transition: all 0.2s ease;
+}
+.input-base::placeholder {
+  color: rgb(113 113 122);
+}
+.input-base:focus {
+  outline: none;
+  border-color: rgba(59, 130, 246, 0.5);
+  background: rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+/* Unified primary button for forms */
+.btn-primary {
+  width: 100%;
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 1rem;
+  font-weight: 600;
+  color: white;
+  background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+  box-shadow: 0 0 40px rgba(59, 130, 246, 0.3);
+  transition: all 0.3s ease;
+}
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* В WebView (Android) Tailwind может отдавать oklch — тени и глубина не рисуются. Явные rgba для нативного приложения. */
+.native-app .rounded-2xl.border {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  background-color: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+.native-app .rounded-xl.border {
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  background-color: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+.native-app .shadow-sm {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+.native-app .shadow-md {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.2);
+}
+.native-app .shadow-lg {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -4px rgba(0, 0, 0, 0.2);
+}
+.native-app .shadow-xl {
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.35), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
 }

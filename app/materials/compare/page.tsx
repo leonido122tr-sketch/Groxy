@@ -88,6 +88,18 @@ export default function MaterialsComparePage() {
           <span className="text-base font-medium text-white">Теплопроводность</span>
         </Link>
 
+        <Link
+          href="/materials/compare/vapor"
+          className="group glass-strong flex items-center gap-4 rounded-2xl p-5 transition-all hover:bg-white/10 hover:shadow-xl active:scale-[0.99]"
+        >
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/5 ring-1 ring-white/10 transition-colors group-hover:bg-white/10">
+            <svg className="h-5 w-5 text-white/90" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+            </svg>
+          </span>
+          <span className="text-base font-medium text-white">Паропроницаемость</span>
+        </Link>
+
         <Link href="/dashboard" className="mt-2 inline-block text-sm text-white/80 underline hover:text-white">
           На главную
         </Link>

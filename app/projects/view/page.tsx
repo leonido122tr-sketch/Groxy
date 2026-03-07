@@ -1,20 +1,20 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useRef, useState, Suspense } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { deleteLocalProject, getLocalProject, listLocalProjects, upsertLocalProject, type LocalProject, type Opening } from '@/lib/projects/localProjects'
-import { getFoundationOverridesFromStorage, getFoundationRoofOverridesFromStorage, getWallsOverridesFromStorage, setFoundationOverridesInStorage, setRoofOverridesInStorage, setWallsOverridesInStorage } from '@/lib/projects/resultOverridesStorage'
+import { clearResultOverridesForVariant, clearResultOverridesFromStorage, getFoundationRoofOverridesFromStorage, getWallsOverridesFromStorage, setFoundationOverridesInStorage, setRoofOverridesInStorage, setWallsOverridesInStorage } from '@/lib/projects/resultOverridesStorage'
 import { Capacitor } from '@capacitor/core'
 import { deleteDeviceProject, listDeviceProjects, saveProjectToDevice } from '@/lib/projects/deviceProjects'
 import WallsCalculator from '../create/walls-2/WallsCalculator'
 import Walls3Calculator from '../create/walls-3/walls3Calculator'
 import Walls4Calculator from '../create/walls-4/walls4Calculator'
-import { ArrowLeft, Download, Building2, Box, Home } from 'lucide-react'
+import { ArrowLeft, Download, Building2, Box, Home, Save } from 'lucide-react'
 import FoundationPage from '../create/walls-2/foundation/page'
 import FoundationPage3 from '../create/walls-3/foundation/page'
 import FoundationPage4 from '../create/walls-4/foundation/page'
-import RoofPage2 from '../create/walls-2/roof/page'
+import { RoofPageWithModal as RoofPage2 } from '../create/walls-2/roof/RoofPageWithModal'
 import RoofPage3 from '../create/walls-3/roof/page'
 import RoofPage4 from '../create/walls-4/roof/page'
 import { DirtyProvider } from '../create/buildings-2/DirtyContext'
@@ -170,6 +170,12 @@ function ProjectViewContent() {
 
 type TabId = 'none' | 'foundation' | 'walls' | 'roof'
 
+const PROJECT_TYPE_TITLES: Record<string, string> = {
+  walls_2: 'Пристрой 2 стены',
+  walls_3: 'Пристрой 3 стены',
+  walls_4: 'Отдельная постройка 4 стены',
+}
+
 type WallSummary = { area: number; volume: number } | null
 
 function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { project: LocalProject; onRenameProject: (newName: string) => void; onProjectUpdated?: (p: LocalProject) => void }) {
@@ -186,6 +192,12 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
   const [pdfComment, setPdfComment] = useState('')
   const [notes, setNotes] = useState('')
   const [resultsOverrides, setResultsOverrides] = useState<{ wallsArea?: number; wallsVolume?: number; foundationVolume?: number; foundationReinforcement?: number; foundationHoops?: number; roofArea?: number }>(project?.resultsOverrides ?? {})
+  const cardVariant = project ? (project.type === 'walls_2' ? '2' : project.type === 'walls_3' ? '3' : '4') : undefined
+  const cardOverrides = useMemo(() => {
+    if (typeof window === 'undefined' || !cardVariant) return resultsOverrides
+    const fromStorage = { ...getFoundationRoofOverridesFromStorage(cardVariant), ...getWallsOverridesFromStorage(cardVariant) }
+    return { ...resultsOverrides, ...fromStorage }
+  }, [resultsOverrides, cardVariant, activeTab])
   const lastSyncedProjectRef = useRef<{ id: string; updatedAt: string } | null>(null)
   const [showOverwriteConfirm, setShowOverwriteConfirm] = useState(false)
   const [detailView, setDetailView] = useState<'foundation' | 'walls' | 'roof' | null>(null)
@@ -193,6 +205,10 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
   const closeDetailViewRef = useRef<(() => void) | null>(null)
   const backButtonListenerRef = useRef<{ remove: () => Promise<void> } | null>(null)
   const pendingSaveOpenViewerRef = useRef(false)
+  const [pdfCaptureProject, setPdfCaptureProject] = useState<LocalProject | null>(null)
+  const pdfCaptureResolveRef = useRef<((b: Uint8Array) => void) | null>(null)
+  const pdfCapturePayloadRef = useRef<Parameters<typeof import('@/lib/pdf/generatePdfClient').generatePdfClient>[0] | null>(null)
+  const [pdfCaptureExtras, setPdfCaptureExtras] = useState<{ foundation: unknown; roof: unknown } | null>(null)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
 
   const openDetailView = useCallback((view: 'foundation' | 'walls' | 'roof') => {
@@ -240,15 +256,46 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
   // eslint-disable-next-line react-hooks/exhaustive-deps -- синхронизация при смене проекта по id
   }, [project?.id])
 
+  // Карточки должны показывать те же данные, что и внутри страниц Фундамент/Стены/Крыша.
+  // Всегда подмешиваем актуальные значения из storage, чтобы не затирать ручные вводы при возврате на обзор.
   useEffect(() => {
-    setResultsOverrides(project?.resultsOverrides ?? {})
-  }, [project?.resultsOverrides])
+    if (!project?.id) return
+    const variant = project.type === 'walls_2' ? '2' : project.type === 'walls_3' ? '3' : '4'
+    const fromProject = project?.resultsOverrides ?? {}
+    const fromStorage = { ...getFoundationRoofOverridesFromStorage(variant), ...getWallsOverridesFromStorage(variant) }
+    setResultsOverrides({ ...fromProject, ...fromStorage })
+  }, [project?.id, project?.type, project?.resultsOverrides])
 
-  // Синхронизируем переопределения из проекта в sessionStorage, чтобы вкладки «Фундамент» и «Крыша» показывали сохранённые значения
+  const lastClearedOverridesProjectIdRef = useRef<string | null>(null)
+  const lastSyncedOverridesRef = useRef<{ id: string; updatedAt: string } | null>(null)
+  // Синхронизируем переопределения из проекта в sessionStorage при открытии проекта и после сохранения.
+  // Не перезаписываем storage при простом переключении вкладок (project не меняется), иначе «Сбросить к расчёту» затирается.
   useEffect(() => {
     if (typeof window === 'undefined' || !project?.id) return
+    const updatedAt = project.updatedAt ?? ''
+    if (lastSyncedOverridesRef.current?.id === project.id && lastSyncedOverridesRef.current?.updatedAt === updatedAt) return
+    lastSyncedOverridesRef.current = { id: project.id, updatedAt }
     const variant = project.type === 'walls_2' ? '2' : project.type === 'walls_3' ? '3' : '4'
     const ro = project.resultsOverrides
+    const hasOverrides =
+      ro &&
+      (ro.foundationVolume != null ||
+        ro.foundationReinforcement != null ||
+        ro.foundationHoops != null ||
+        ro.roofArea != null ||
+        ro.roofRaftersVolume != null ||
+        ro.roofPurlinVolume != null ||
+        ro.roofBattenVolume != null ||
+        ro.wallsArea != null ||
+        ro.wallsVolume != null)
+    if (!hasOverrides) {
+      if (lastClearedOverridesProjectIdRef.current !== project.id) {
+        lastClearedOverridesProjectIdRef.current = project.id
+        clearResultOverridesForVariant(variant)
+      }
+      return
+    }
+    lastClearedOverridesProjectIdRef.current = project.id
     setFoundationOverridesInStorage(variant, { foundationVolume: ro?.foundationVolume, foundationReinforcement: ro?.foundationReinforcement, foundationHoops: ro?.foundationHoops })
     setRoofOverridesInStorage(variant, { roofArea: ro?.roofArea })
     setWallsOverridesInStorage(variant, { wallsArea: ro?.wallsArea, wallsVolume: ro?.wallsVolume })
@@ -258,31 +305,38 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
   useEffect(() => {
     if (activeTab !== 'none' || typeof window === 'undefined' || !project?.id) return
     const variant = project.type === 'walls_2' ? '2' : project.type === 'walls_3' ? '3' : '4'
-    const foundationOverrides = getFoundationOverridesFromStorage(variant)
-    const { roofArea } = getFoundationRoofOverridesFromStorage(variant)
+    const foundationRoofOverrides = getFoundationRoofOverridesFromStorage(variant)
     const wallsOverrides = getWallsOverridesFromStorage(variant)
     setResultsOverrides((prev) => ({
       ...prev,
-      foundationVolume: foundationOverrides.foundationVolume,
-      roofArea,
+      ...foundationRoofOverrides,
       wallsArea: wallsOverrides.wallsArea,
       wallsVolume: wallsOverrides.wallsVolume,
     }))
   }, [activeTab, project?.id, project?.type])
 
+  // При выходе со страницы проекта удаляем ручные переопределения из sessionStorage, если проект не сохранён.
+  useEffect(() => {
+    return () => {
+      clearResultOverridesFromStorage()
+    }
+  }, [])
+
   // Сброс «грязного» состояния и синхронизация в storage при открытии проекта или после сохранения.
-  // Выполняется ДО эффекта с [project?.type], чтобы projectIsDirty был уже 'false' при чтении там.
+  // Сбрасываем dirty только при открытии другого проекта (!prev || prev.id !== id), чтобы изменение проёмов в модалке не гасило кнопку «Сохранить».
   useEffect(() => {
     if (!project?.id) return
-    // При каждом открытии проекта сбрасываем dirty, иначе при повторном заходе в тот же проект кнопка остаётся «Сохранить»
-    sessionStorage.setItem('projectIsDirty', 'false')
-    setIsDirty(false)
-    if (!savedPdfUri) {
-      setSavedPdfUri('saved')
-    }
     const id = project.id
     const updatedAt = project.updatedAt ?? ''
     const prev = lastSyncedProjectRef.current
+    const isOpeningOtherProject = !prev || prev.id !== id
+    if (isOpeningOtherProject) {
+      sessionStorage.setItem('projectIsDirty', 'false')
+      setIsDirty(false)
+      if (!savedPdfUri) {
+        setSavedPdfUri('saved')
+      }
+    }
     const shouldSync = !prev || prev.id !== id || prev.updatedAt !== updatedAt
     if (!shouldSync) return
     lastSyncedProjectRef.current = { id, updatedAt }
@@ -290,38 +344,65 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
     const suffix = `_walls_${n}`
     sessionStorage.setItem(`currentProjectName${suffix}`, project.name || '')
     const wallsKey = `currentProjectData_walls_${n}`
-    const wallsData = {
-      projectId: project.id,
-      name: project.name,
-      material: project.data.material,
-      principle: project.data.principle,
-      ...('width' in project.data
-        ? { width: project.data.width, length: project.data.length }
-        : { left: project.data.left, back: project.data.back, right: project.data.right }),
-      height: project.data.height,
-      thickness: project.data.thickness,
-      openings: project.data.openings || [],
-      note: project.data.note,
-    }
-    sessionStorage.setItem(wallsKey, JSON.stringify(wallsData))
-    const foundationKey = `currentProjectData_foundation_${n}`
-    if (project.foundation && typeof project.foundation === 'object' && Object.keys(project.foundation).length > 0) {
-      sessionStorage.setItem(foundationKey, JSON.stringify(project.foundation))
-    } else {
-      sessionStorage.removeItem(foundationKey)
-    }
-    const projectWithRoof = project as { roof?: Record<string, unknown> }
-    const roofKey = `currentProjectData_roof_${n}`
-    if (projectWithRoof.roof && typeof projectWithRoof.roof === 'object' && Object.keys(projectWithRoof.roof).length > 0) {
-      sessionStorage.setItem(roofKey, JSON.stringify(projectWithRoof.roof))
-    } else {
-      sessionStorage.removeItem(roofKey)
+    // Не перезаписываем стены/фундамент/крышу, если в сессии уже есть несохранённые правки этого же проекта (переключение вкладок Фундамент/Стены/Крыша)
+    const existingWalls = (() => {
+      try {
+        const raw = sessionStorage.getItem(wallsKey)
+        return raw ? (JSON.parse(raw) as { projectId?: string }) : null
+      } catch {
+        return null
+      }
+    })()
+    const preserveSessionEdits = sessionStorage.getItem('projectIsDirty') === 'true' && existingWalls?.projectId === id
+    if (!preserveSessionEdits) {
+      const wallsData = {
+        projectId: project.id,
+        name: project.name,
+        material: project.data.material,
+        principle: project.data.principle,
+        ...('width' in project.data
+          ? { width: project.data.width, length: project.data.length }
+          : { left: project.data.left, back: project.data.back, right: project.data.right }),
+        height: project.data.height,
+        thickness: project.data.thickness,
+        openings: project.data.openings || [],
+        note: project.data.note,
+      }
+      sessionStorage.setItem(wallsKey, JSON.stringify(wallsData))
+      const foundationKey = `currentProjectData_foundation_${n}`
+      if (project.foundation && typeof project.foundation === 'object' && Object.keys(project.foundation).length > 0) {
+        sessionStorage.setItem(foundationKey, JSON.stringify(project.foundation))
+      } else {
+        sessionStorage.removeItem(foundationKey)
+      }
+      const projectWithRoof = project as { roof?: Record<string, unknown> }
+      const roofKey = `currentProjectData_roof_${n}`
+      if (projectWithRoof.roof && typeof projectWithRoof.roof === 'object' && Object.keys(projectWithRoof.roof).length > 0) {
+        sessionStorage.setItem(roofKey, JSON.stringify(projectWithRoof.roof))
+      } else {
+        sessionStorage.removeItem(roofKey)
+      }
     }
     sessionStorage.setItem(`pdfComment${suffix}`, project.pdfComment ?? '')
     sessionStorage.setItem(`notes${suffix}`, project.notes ?? '')
     window.dispatchEvent(new CustomEvent('projectDataChanged'))
   // eslint-disable-next-line react-hooks/exhaustive-deps -- явный набор полей проекта, project/savedPdfUri не добавляем намеренно
   }, [project?.id, project?.name, project?.type, project?.data, project?.foundation, (project as { roof?: unknown })?.roof, project?.pdfComment, project?.notes])
+
+  // При выходе из проекта без сохранения сбрасываем несохранённые данные в storage, чтобы при следующем открытии показать сохранённое состояние
+  useEffect(() => {
+    const id = project?.id
+    const type = project?.type
+    return () => {
+      if (typeof window === 'undefined' || !id || !type) return
+      if (sessionStorage.getItem('projectIsDirty') !== 'true') return
+      const n = type === 'walls_2' ? '2' : type === 'walls_3' ? '3' : '4'
+      sessionStorage.removeItem(`currentProjectData_walls_${n}`)
+      sessionStorage.removeItem(`currentProjectData_foundation_${n}`)
+      sessionStorage.removeItem(`currentProjectData_roof_${n}`)
+      sessionStorage.setItem('projectIsDirty', 'false')
+    }
+  }, [project?.id, project?.type])
 
   const formatDateForPdf = (isoDate?: string) => {
     if (!isoDate) return null
@@ -401,8 +482,9 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
       // Файл сохранён, но uri мог быть очищен — помечаем как сохранённый
       setSavedPdfUri('saved')
     }
-    const savedDirty = sessionStorage.getItem('projectIsDirty') === 'true'
-    setIsDirty(savedDirty)
+    // При открытии сохранённого проекта кнопка дискеты неактивна; станет активной только после изменений в фундаменте/стенах/крыше
+    setIsDirty(false)
+    if (typeof window !== 'undefined') sessionStorage.setItem('projectIsDirty', 'false')
 
     const computeFoundationResult = () => {
       const foundationKey =
@@ -617,16 +699,73 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
       setRoofResult(computeRoofResultFromStorage())
       computeWallSummaryFromStorage()
     }
+    const handleProjectIsDirtyChanged = () => {
+      const dirty = sessionStorage.getItem('projectIsDirty') === 'true'
+      setIsDirty(dirty)
+      if (dirty) {
+        setSavedPdfUri(null)
+        sessionStorage.removeItem('pdfViewerUri')
+      }
+    }
     window.addEventListener('projectDataChanged', handleProjectDataChanged)
+    window.addEventListener('projectIsDirtyChanged', handleProjectIsDirtyChanged)
     return () => {
       window.removeEventListener('projectDataChanged', handleProjectDataChanged)
+      window.removeEventListener('projectIsDirtyChanged', handleProjectIsDirtyChanged)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- пересчёт при смене типа, computeWallSummary/project не в deps намеренно
   }, [project?.type])
 
+  const CAPTURE_DELAY_MS = 700
+  // Захват большой визуализации для PDF (walls_2, walls_3, walls_4): после рендера планов делаем toPng и передаём в generatePdfClient
+  useEffect(() => {
+    if (!pdfCaptureProject) return
+    const payload = pdfCapturePayloadRef.current
+    if (!payload) return
+    const timer = setTimeout(async () => {
+      try {
+        const foundationEl = document.querySelector('[data-pdf-plan="foundation"]')
+        const wallsEl = document.querySelector('[data-pdf-plan="walls"]')
+        const roofEl = document.querySelector('[data-pdf-plan="roof"]')
+        const { toPng } = await import('html-to-image')
+        const planImages: import('@/lib/pdf/generatePdfClient').PlanImages = {}
+        if (foundationEl) planImages.foundation = await toPng(foundationEl as HTMLElement, { pixelRatio: 2 })
+        if (wallsEl) planImages.walls = await toPng(wallsEl as HTMLElement, { pixelRatio: 2 })
+        if (roofEl) planImages.roof = await toPng(roofEl as HTMLElement, { pixelRatio: 2 })
+        const { generatePdfClient } = await import('@/lib/pdf/generatePdfClient')
+        const pdfBytes = await generatePdfClient({ ...payload, planImages })
+        pdfCaptureResolveRef.current?.(pdfBytes)
+      } catch (e) {
+        console.warn('PDF plan capture failed, falling back to simple plan', e)
+        try {
+          const { generatePdfClient } = await import('@/lib/pdf/generatePdfClient')
+          const pdfBytes = await generatePdfClient(payload)
+          pdfCaptureResolveRef.current?.(pdfBytes)
+        } catch {
+          pdfCaptureResolveRef.current?.(new Uint8Array(0))
+        }
+      } finally {
+        setPdfCaptureProject(null)
+        setPdfCaptureExtras(null)
+        pdfCaptureResolveRef.current = null
+        pdfCapturePayloadRef.current = null
+      }
+    }, CAPTURE_DELAY_MS)
+    return () => clearTimeout(timer)
+  }, [pdfCaptureProject])
+
   const isPdfSaved = !!savedPdfUri
   const isDirtyEffective = isDirty
-  const isPdfButtonActive = (project.name.trim() !== '') || isPdfSaved || isDirtyEffective
+  // Есть ли данные по разделам (достаточно для PDF) — при открытии из «Мои проекты» кнопка должна быть доступна
+  const hasAnySectionData = !!(
+    (project.foundation && typeof project.foundation === 'object' && Object.keys(project.foundation).length > 0) ||
+    (project.data && (
+      ('width' in project.data && Number(project.data.width) > 0 && Number(project.data.length) > 0) ||
+      ('left' in project.data && Number(project.data.left) > 0 && Number(project.data.back) > 0 && Number(project.data.right) > 0)
+    )) ||
+    ((project as { roof?: unknown }).roof && typeof (project as { roof?: unknown }).roof === 'object')
+  )
+  const isPdfButtonActive = (project.name.trim() !== '') || isPdfSaved || isDirtyEffective || hasAnySectionData
 
   const materialLabels: Record<string, string> = {
     brick_m100: 'Кирпич (M100)',
@@ -790,10 +929,9 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
       }
       projectToSave = { ...projectToSave, pdfComment: pdfComment.trim() || undefined, notes: notes.trim() || undefined }
       const variant = project.type === 'walls_2' ? '2' : project.type === 'walls_3' ? '3' : '4'
-      const mergedOverrides = { ...resultsOverrides, ...getFoundationRoofOverridesFromStorage(variant), ...getWallsOverridesFromStorage(variant) }
-      if (Object.keys(mergedOverrides).length > 0) {
-        projectToSave = { ...projectToSave, resultsOverrides: mergedOverrides } as LocalProject
-      }
+      // Берём переопределения только из storage (источник правды после вкладок Фундамент/Стены/Крыша). Иначе после «Сбросить к расчёту» в проект снова попадали бы старые из resultsOverrides.
+      const mergedOverrides = { ...getFoundationRoofOverridesFromStorage(variant), ...getWallsOverridesFromStorage(variant) }
+      projectToSave = { ...projectToSave, resultsOverrides: mergedOverrides } as LocalProject
 
       if (!nameChanged && !skipOverwriteConfirm) {
         pendingSaveOpenViewerRef.current = openViewer
@@ -956,14 +1094,19 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
 
       const { generatePdfClient } = await import('@/lib/pdf/generatePdfClient')
       const openings = Array.isArray(projectToSave.data.openings)
-        ? projectToSave.data.openings.map((o) => ({ width: o.width, height: o.height }))
+        ? projectToSave.data.openings.map((o) => ({
+            width: o.width,
+            height: o.height,
+            ...(typeof o.offset === 'number' && Number.isFinite(o.offset) ? { offset: o.offset } : {}),
+            ...(o.wall != null ? { wall: o.wall } : {}),
+          }))
         : []
       const roofPayload =
         projectRoof && typeof projectRoof === 'object' && projectRoof !== null
           ? { roof: projectRoof as import('@/lib/pdf/generatePdfClient').RoofData }
           : {}
-      const pdfBytes = results
-        ? await generatePdfClient({
+      const fullPayload = results
+        ? {
             title: projectToSave.name.trim() || 'Проект строительства',
             includeMeta: includePdfMeta,
             pdfComment: projectToSave.pdfComment,
@@ -996,17 +1139,28 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
             foundation,
             ...roofPayload,
             ...(projectToSave.resultsOverrides && Object.keys(projectToSave.resultsOverrides).length > 0 ? { resultsOverrides: projectToSave.resultsOverrides } : {}),
-          })
-        : await generatePdfClient({
+          }
+        : {
             title: projectToSave.name.trim() || 'Проект строительства',
             includeMeta: includePdfMeta,
             pdfComment: projectToSave.pdfComment,
-            skipWalls: true,
+            skipWalls: true as const,
             type: projectToSave.type,
             foundation,
             ...roofPayload,
             ...(projectToSave.resultsOverrides && Object.keys(projectToSave.resultsOverrides).length > 0 ? { resultsOverrides: projectToSave.resultsOverrides } : {}),
-          })
+          }
+      let pdfBytes: Uint8Array
+      if (projectToSave.type === 'walls_2' || projectToSave.type === 'walls_3' || projectToSave.type === 'walls_4') {
+        pdfCapturePayloadRef.current = fullPayload
+        setPdfCaptureExtras({ foundation, roof: projectRoof })
+        setPdfCaptureProject(projectToSave)
+        pdfBytes = await new Promise<Uint8Array>((resolve) => {
+          pdfCaptureResolveRef.current = resolve
+        })
+      } else {
+        pdfBytes = await generatePdfClient(fullPayload)
+      }
 
       const filename = filenameToUse
 
@@ -1140,6 +1294,95 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
 
   return (
     <div className="flex min-h-screen flex-col bg-black font-sans text-white pt-safe">
+      {/* Скрытый блок для захвата большой визуализации в PDF (walls_2, walls_3, walls_4) */}
+      {pdfCaptureProject && pdfCaptureExtras ? (
+        <div
+          aria-hidden
+          className="pointer-events-none fixed left-0 top-0 z-[-1] flex flex-col gap-4 bg-stone-100 p-4 opacity-0"
+          style={{ width: 820, minHeight: 1 }}
+        >
+          {pdfCaptureProject.type === 'walls_2' && (
+            <>
+              {pdfCaptureExtras.foundation && typeof pdfCaptureExtras.foundation === 'object' && 'width' in pdfCaptureExtras.foundation ? (
+                <DetailPlanFoundationWalls2
+                  width={Number((pdfCaptureExtras.foundation as { width?: number }).width) || 5}
+                  length={Number((pdfCaptureExtras.foundation as { length?: number }).length) || 5}
+                  thickness={Number((pdfCaptureExtras.foundation as { thickness?: number }).thickness) ?? 0.25}
+                  principle={(pdfCaptureExtras.foundation as { principle?: 'inside' | 'outside' })?.principle === 'outside' ? 'outside' : 'inside'}
+                  embedOnly
+                  onClose={() => {}}
+                />
+              ) : null}
+              <DetailPlanWallsWalls2 project={pdfCaptureProject as Extract<LocalProject, { type: 'walls_2' }>} embedOnly onClose={() => {}} />
+              {pdfCaptureExtras.roof && typeof pdfCaptureExtras.roof === 'object' && 'width' in pdfCaptureExtras.roof ? (
+                <DetailPlanRoofWalls2
+                  width={Number((pdfCaptureExtras.roof as { width?: number }).width) || 5}
+                  length={Number((pdfCaptureExtras.roof as { length?: number }).length) || 5}
+                  overhang={Number((pdfCaptureExtras.roof as { overhang?: number }).overhang) ?? 0.4}
+                  height={Number((pdfCaptureExtras.roof as { height?: number }).height) ?? 0.5}
+                  slopeToward={Number((pdfCaptureExtras.roof as { slopeToward?: number }).slopeToward) === 1 ? 1 : 0}
+                  embedOnly
+                  onClose={() => {}}
+                />
+              ) : null}
+            </>
+          )}
+          {pdfCaptureProject.type === 'walls_3' && (
+            <>
+              {pdfCaptureExtras.foundation && typeof pdfCaptureExtras.foundation === 'object' && 'left' in pdfCaptureExtras.foundation ? (
+                <DetailPlanFoundationWalls3
+                  left={Number((pdfCaptureExtras.foundation as { left?: number }).left) || 3}
+                  back={Number((pdfCaptureExtras.foundation as { back?: number }).back) || 5}
+                  right={Number((pdfCaptureExtras.foundation as { right?: number }).right) || 3}
+                  thickness={Number((pdfCaptureExtras.foundation as { thickness?: number }).thickness) ?? 0.25}
+                  principle={(pdfCaptureExtras.foundation as { principle?: 'inside' | 'outside' })?.principle === 'outside' ? 'outside' : 'inside'}
+                  embedOnly
+                  onClose={() => {}}
+                />
+              ) : null}
+              <DetailPlanWallsWalls3 project={pdfCaptureProject as Extract<LocalProject, { type: 'walls_3' }>} embedOnly onClose={() => {}} />
+              {pdfCaptureExtras.roof && typeof pdfCaptureExtras.roof === 'object' && 'left' in pdfCaptureExtras.roof ? (
+                <DetailPlanRoofWalls3
+                  left={Number((pdfCaptureExtras.roof as { left?: number }).left) || 3}
+                  back={Number((pdfCaptureExtras.roof as { back?: number }).back) || 5}
+                  right={Number((pdfCaptureExtras.roof as { right?: number }).right) || 3}
+                  overhang={Number((pdfCaptureExtras.roof as { overhang?: number }).overhang) ?? 0.4}
+                  height={Number((pdfCaptureExtras.roof as { height?: number }).height) ?? 0.5}
+                  embedOnly
+                  onClose={() => {}}
+                />
+              ) : null}
+            </>
+          )}
+          {pdfCaptureProject.type === 'walls_4' && (
+            <>
+              {pdfCaptureExtras.foundation && typeof pdfCaptureExtras.foundation === 'object' && 'width' in pdfCaptureExtras.foundation ? (
+                <DetailPlanFoundationWalls4
+                  width={Number((pdfCaptureExtras.foundation as { width?: number }).width) || 5}
+                  length={Number((pdfCaptureExtras.foundation as { length?: number }).length) || 5}
+                  thickness={Number((pdfCaptureExtras.foundation as { thickness?: number }).thickness) ?? 0.25}
+                  principle={(pdfCaptureExtras.foundation as { principle?: 'inside' | 'outside' })?.principle === 'outside' ? 'outside' : 'inside'}
+                  embedOnly
+                  onClose={() => {}}
+                />
+              ) : null}
+              <DetailPlanWallsWalls4 project={pdfCaptureProject as Extract<LocalProject, { type: 'walls_4' }>} embedOnly onClose={() => {}} />
+              {pdfCaptureExtras.roof && typeof pdfCaptureExtras.roof === 'object' && 'width' in pdfCaptureExtras.roof ? (
+                <DetailPlanRoofWalls4
+                  width={Number((pdfCaptureExtras.roof as { width?: number }).width) || 5}
+                  length={Number((pdfCaptureExtras.roof as { length?: number }).length) || 5}
+                  overhang={Number((pdfCaptureExtras.roof as { overhang?: number }).overhang) ?? 0.4}
+                  height={Number((pdfCaptureExtras.roof as { height?: number }).height) ?? 0.5}
+                  roofType={((pdfCaptureExtras.roof as { type?: string }).type === 'gable' ? 'gable' : 'single') as 'single' | 'gable'}
+                  ridgeAlongLength={typeof (pdfCaptureExtras.roof as unknown as { ridgeAlongLength?: boolean }).ridgeAlongLength === 'boolean' ? (pdfCaptureExtras.roof as unknown as { ridgeAlongLength: boolean }).ridgeAlongLength : true}
+                  embedOnly
+                  onClose={() => {}}
+                />
+              ) : null}
+            </>
+          )}
+        </div>
+      ) : null}
       <header className="border-b border-white/10">
         <div className="mx-auto max-w-5xl px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between gap-4">
@@ -1155,32 +1398,38 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
                 type="button"
                 onClick={() => {
                   if (activeTab === 'foundation') {
-                    const foundationKey =
-                      project.type === 'walls_2' ? 'currentProjectData_foundation_2' :
-                      project.type === 'walls_3' ? 'currentProjectData_foundation_3' :
-                      'currentProjectData_foundation_4'
-                    const raw = sessionStorage.getItem(foundationKey)
-                    if (raw) {
-                      try {
-                        const data = JSON.parse(raw) as Record<string, unknown>
-                        const hasDims =
-                          project.type === 'walls_3'
-                            ? Number(data.left ?? 0) > 0 &&
-                              Number(data.back ?? 0) > 0 &&
-                              Number(data.right ?? 0) > 0 &&
-                              Number(data.height ?? 0) > 0 &&
-                              Number(data.thickness ?? 0) > 0
-                            : Number(data.length ?? 0) > 0 &&
-                              Number(data.width ?? 0) > 0 &&
-                              Number(data.height ?? 0) > 0 &&
-                              Number(data.thickness ?? 0) > 0
-                        const concreteGrade = typeof data.concreteGrade === 'string' ? data.concreteGrade : ''
-                        if (hasDims && !concreteGrade) {
-                          setShowConcreteGradeRequiredModal(true)
-                          return
+                    const hasSavedFoundation =
+                      project?.foundation &&
+                      typeof project.foundation === 'object' &&
+                      Object.keys(project.foundation).length > 0
+                    if (!hasSavedFoundation) {
+                      const foundationKey =
+                        project.type === 'walls_2' ? 'currentProjectData_foundation_2' :
+                        project.type === 'walls_3' ? 'currentProjectData_foundation_3' :
+                        'currentProjectData_foundation_4'
+                      const raw = sessionStorage.getItem(foundationKey)
+                      if (raw) {
+                        try {
+                          const data = JSON.parse(raw) as Record<string, unknown>
+                          const hasDims =
+                            project.type === 'walls_3'
+                              ? Number(data.left ?? 0) > 0 &&
+                                Number(data.back ?? 0) > 0 &&
+                                Number(data.right ?? 0) > 0 &&
+                                Number(data.height ?? 0) > 0 &&
+                                Number(data.thickness ?? 0) > 0
+                              : Number(data.length ?? 0) > 0 &&
+                                Number(data.width ?? 0) > 0 &&
+                                Number(data.height ?? 0) > 0 &&
+                                Number(data.thickness ?? 0) > 0
+                          const concreteGrade = typeof data.concreteGrade === 'string' ? data.concreteGrade : ''
+                          if (hasDims && !concreteGrade) {
+                            setShowConcreteGradeRequiredModal(true)
+                            return
+                          }
+                        } catch {
+                          // ignore
                         }
-                      } catch {
-                        // ignore
                       }
                     }
                   }
@@ -1191,21 +1440,33 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
                 <ArrowLeft className="h-5 w-5" aria-label="Назад к проекту" />
               </button>
             )}
-            <div className="flex min-w-0 flex-1 items-center justify-center">
-              <h1 className="truncate text-xl font-bold">{project.name}</h1>
-            </div>
-            <div className="w-[88px]" />
+            <h1 className="text-2xl font-bold truncate max-w-[70%]">{PROJECT_TYPE_TITLES[project.type] ?? project.name}</h1>
+            {activeTab === 'none' ? (
+              <button
+                type="button"
+                onClick={() => void handleSavePdf(false)}
+                disabled={!isDirtyEffective}
+                aria-label="Сохранить PDF"
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors ${
+                  isDirtyEffective
+                    ? 'bg-blue-600 text-white hover:bg-blue-500'
+                    : 'cursor-not-allowed bg-white/10 text-zinc-500'
+                }`}
+              >
+                <Save className="h-5 w-5" aria-hidden />
+              </button>
+            ) : (
+              <div className="w-[88px]" />
+            )}
           </div>
         </div>
       </header>
 
       <main className="flex-1">
         {activeTab === 'none' && (
-        <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
-          <h2 className="text-3xl font-bold leading-tight">{project.name}</h2>
-          <p className="mt-1 max-w-2xl text-sm text-zinc-400">Выберите раздел для просмотра или редактирования</p>
-
-          <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
+          <h2 className="text-xl font-semibold text-white mb-4">{project.name}</h2>
+          <div className="mt-0 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <button
               onClick={() => setActiveTab('foundation')}
               className="flex flex-col items-center gap-1.5 rounded-2xl bg-gradient-to-r from-green-500 to-emerald-600 px-5 py-5 text-base font-semibold text-white shadow-md transition-opacity hover:opacity-95"
@@ -1214,11 +1475,17 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
                 <Building2 className="h-6 w-6 shrink-0 text-white" />
                 <span>Фундамент</span>
               </div>
-              {(foundationResult || (resultsOverrides.foundationVolume != null && Number.isFinite(resultsOverrides.foundationVolume))) && (
-                <span className="text-xs font-normal opacity-90">
-                  {(resultsOverrides.foundationVolume ?? foundationResult?.volume ?? 0).toFixed(2).replace('.', ',')} м³
-                </span>
-              )}
+              {(() => {
+                // Те же значения, что на странице фундамента: ручной итог из storage или авто-расчёт
+                const variant = project.type === 'walls_2' ? '2' : project.type === 'walls_3' ? '3' : '4'
+                const manual = getFoundationRoofOverridesFromStorage(variant).foundationVolume
+                const value = manual != null && Number.isFinite(manual) ? manual : foundationResult?.volume
+                return value != null ? (
+                  <span className="text-xs font-normal opacity-90">
+                    {Number(value).toFixed(2).replace('.', ',')} м³
+                  </span>
+                ) : null
+              })()}
             </button>
 
             <button
@@ -1229,11 +1496,19 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
                 <Box className="h-6 w-6 shrink-0 text-white" />
                 <span>Стены</span>
               </div>
-              {(wallSummary || (resultsOverrides.wallsArea != null && Number.isFinite(resultsOverrides.wallsArea)) || (resultsOverrides.wallsVolume != null && Number.isFinite(resultsOverrides.wallsVolume))) && (
-                <span className="text-xs font-normal opacity-90">
-                  {(resultsOverrides.wallsArea ?? wallSummary?.area ?? 0).toFixed(2).replace('.', ',')} м² · {(resultsOverrides.wallsVolume ?? wallSummary?.volume ?? 0).toFixed(2).replace('.', ',')} м³
-                </span>
-              )}
+              {(() => {
+                // Те же значения, что на странице стен: ручные итоги из storage или авто-расчёт
+                const variant = project.type === 'walls_2' ? '2' : project.type === 'walls_3' ? '3' : '4'
+                const fromStorage = getWallsOverridesFromStorage(variant)
+                const area = fromStorage.wallsArea != null && Number.isFinite(fromStorage.wallsArea) ? fromStorage.wallsArea : wallSummary?.area
+                const volume = fromStorage.wallsVolume != null && Number.isFinite(fromStorage.wallsVolume) ? fromStorage.wallsVolume : wallSummary?.volume
+                const show = (wallSummary != null || area != null || volume != null) && (area != null || volume != null)
+                return show ? (
+                  <span className="text-xs font-normal opacity-90">
+                    {(area ?? 0).toFixed(2).replace('.', ',')} м² · {(volume ?? 0).toFixed(2).replace('.', ',')} м³
+                  </span>
+                ) : null
+              })()}
             </button>
 
             <button
@@ -1244,11 +1519,17 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
                 <Home className="h-6 w-6 shrink-0 text-white" />
                 <span>Крыша</span>
               </div>
-              {(roofResult || (resultsOverrides.roofArea != null && Number.isFinite(resultsOverrides.roofArea))) && (
-                <span className="text-xs font-normal opacity-90">
-                  {(resultsOverrides.roofArea ?? roofResult?.area ?? 0).toFixed(2).replace('.', ',')} м²
-                </span>
-              )}
+              {(() => {
+                // Те же значения, что на странице крыши: ручной итог из storage или авто-расчёт
+                const variant = project.type === 'walls_2' ? '2' : project.type === 'walls_3' ? '3' : '4'
+                const manual = getFoundationRoofOverridesFromStorage(variant).roofArea
+                const value = manual != null && Number.isFinite(manual) ? manual : roofResult?.area
+                return value != null ? (
+                  <span className="text-xs font-normal opacity-90">
+                    {Number(value).toFixed(2).replace('.', ',')} м²
+                  </span>
+                ) : null
+              })()}
             </button>
           </div>
 
@@ -1263,6 +1544,7 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
                   onChange={(e) => {
                     setPdfComment(e.target.value)
                     sessionStorage.setItem('projectIsDirty', 'true')
+                    setIsDirty(true)
                     setSavedPdfUri(null)
                     window.dispatchEvent(new CustomEvent('projectDataChanged'))
                   }}
@@ -1280,6 +1562,7 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
                   onChange={(e) => {
                     setNotes(e.target.value)
                     sessionStorage.setItem('projectIsDirty', 'true')
+                    setIsDirty(true)
                     window.dispatchEvent(new CustomEvent('projectDataChanged'))
                   }}
                   inputMode="text"
@@ -1328,6 +1611,7 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
                     setIncludePdfMeta(e.target.checked)
                     sessionStorage.setItem(includePdfMetaKey, String(e.target.checked))
                     sessionStorage.setItem('projectIsDirty', 'true')
+                    setIsDirty(true)
                     sessionStorage.removeItem('pdfViewerUri')
                     window.dispatchEvent(new CustomEvent('projectDataChanged'))
                   }}
@@ -1350,17 +1634,17 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
               <>
                 {project.type === 'walls_2' && (
                   <DirtyProvider>
-                    <FoundationPage embedInView onSchemaClick={() => openDetailView('foundation')} />
+                    <FoundationPage {...({ embedInView: true, onSchemaClick: () => openDetailView('foundation'), initialProject: project } as React.ComponentProps<typeof FoundationPage>)} />
                   </DirtyProvider>
                 )}
                 {project.type === 'walls_3' && (
                   <DirtyProvider>
-                    <FoundationPage3 embedInView onSchemaClick={() => openDetailView('foundation')} />
+                    <FoundationPage3 embedInView onSchemaClick={() => openDetailView('foundation')} initialProject={project} />
                   </DirtyProvider>
                 )}
                 {project.type === 'walls_4' && (
                   <DirtyProvider>
-                    <FoundationPage4 embedInView onSchemaClick={() => openDetailView('foundation')} />
+                    <FoundationPage4 {...({ embedInView: true, onSchemaClick: () => openDetailView('foundation'), initialProject: project } as React.ComponentProps<typeof FoundationPage4>)} />
                   </DirtyProvider>
                 )}
               </>
@@ -1368,6 +1652,9 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
 
             {activeTab === 'walls' && (
               <>
+                {project.type === 'walls_2' && (
+                  <WallsCalculator mode="edit" projectId={project.id} initialProject={project} embedInView onSchemaClick={() => openDetailView('walls')} />
+                )}
                 {project.type === 'walls_3' && (
                   <Walls3Calculator mode="edit" projectId={project.id} initialProject={project} embedInView onSchemaClick={() => openDetailView('walls')} />
                 )}
@@ -1390,17 +1677,14 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
                     }}
                   />
                 )}
-                {project.type === 'walls_2' && (
-                  <WallsCalculator mode="edit" projectId={project.id} initialProject={project} embedInView onSchemaClick={() => openDetailView('walls')} />
-                )}
               </>
             )}
 
             {activeTab === 'roof' && (
               <>
-                {project.type === 'walls_2' && <RoofPage2 embedInView onSchemaClick={() => openDetailView('roof')} />}
-                {project.type === 'walls_3' && <RoofPage3 embedInView onSchemaClick={() => openDetailView('roof')} />}
-                {project.type === 'walls_4' && <RoofPage4 embedInView onSchemaClick={() => openDetailView('roof')} />}
+                {project.type === 'walls_2' && <RoofPage2 embedInView onSchemaClick={() => openDetailView('roof')} initialProject={project} />}
+                {project.type === 'walls_3' && <RoofPage3 embedInView onSchemaClick={() => openDetailView('roof')} initialProject={project} />}
+                {project.type === 'walls_4' && <RoofPage4 embedInView onSchemaClick={() => openDetailView('roof')} initialProject={project} />}
               </>
             )}
           </div>
@@ -1468,11 +1752,17 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
             onClose={closeDetailView}
             onOpeningsChange={(nextOpenings) => {
               const nextData = { ...data, openings: nextOpenings }
-              const next = { ...project, data: nextData }
+              const next = { ...project, data: nextData, updatedAt: new Date().toISOString() }
               onProjectUpdated?.(next)
+              setIsDirty(true)
               sessionStorage.setItem('projectIsDirty', 'true')
               sessionStorage.setItem('currentProjectData_walls_2', JSON.stringify({ ...nextData, projectId: project.id }))
               window.dispatchEvent(new CustomEvent('projectDataChanged'))
+              if (Capacitor.isNativePlatform()) {
+                saveProjectToDevice(next).catch(() => {})
+              } else {
+                upsertLocalProject(next)
+              }
             }}
           />
         )
@@ -1592,11 +1882,17 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
             project={projectWithStorage}
             onClose={closeDetailView}
             onOpeningsChange={(nextOpenings) => {
-              const next = { ...project, data: { ...project.data, openings: nextOpenings } }
+              const next = { ...project, data: { ...project.data, openings: nextOpenings }, updatedAt: new Date().toISOString() }
               onProjectUpdated?.(next)
+              setIsDirty(true)
               sessionStorage.setItem('projectIsDirty', 'true')
-              sessionStorage.setItem('currentProjectData_walls_3', JSON.stringify({ ...project.data, openings: nextOpenings }))
+              sessionStorage.setItem('currentProjectData_walls_3', JSON.stringify({ ...project.data, openings: nextOpenings, projectId: project.id }))
               window.dispatchEvent(new CustomEvent('projectDataChanged'))
+              if (Capacitor.isNativePlatform()) {
+                saveProjectToDevice(next).catch(() => {})
+              } else {
+                upsertLocalProject(next)
+              }
             }}
           />
         )
@@ -1632,11 +1928,19 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
             project={projectWithStorage}
             onOpeningsChange={(nextOpenings) => {
               const nextData = { ...projectWithStorage.data, openings: nextOpenings }
-              const updated = { ...projectWithStorage, data: nextData }
+              const updated = { ...projectWithStorage, data: nextData, updatedAt: new Date().toISOString() }
               onProjectUpdated?.(updated)
+              setIsDirty(true)
               if (typeof window !== 'undefined') {
                 try {
                   sessionStorage.setItem('currentProjectData_walls_4', JSON.stringify({ ...nextData, projectId: project.id }))
+                  sessionStorage.setItem('projectIsDirty', 'true')
+                  window.dispatchEvent(new CustomEvent('projectDataChanged'))
+                  if (Capacitor.isNativePlatform()) {
+                    saveProjectToDevice(updated).catch(() => {})
+                  } else {
+                    upsertLocalProject(updated)
+                  }
                 } catch {
                   // ignore
                 }

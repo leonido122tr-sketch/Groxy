@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { LocalProject } from '@/lib/projects/localProjects'
 import type { Opening } from '@/lib/projects/localProjects'
 
@@ -10,6 +10,8 @@ const GRID_MARGIN_CELLS = 2
 const DIMENSION_OFFSET = 28
 const MAX_CONTENT_PX = 800
 const DIMENSION_FONT_SIZE = 13
+/** Увеличенная область касания для перетаскивания проёма (px) */
+const TOUCH_HIT_PADDING = 24
 /** Полудлина косой засечки 45° */
 const DIM_TICK_45 = 4 / Math.sqrt(2)
 
@@ -23,15 +25,20 @@ type Props = {
   project: Extract<LocalProject, { type: 'walls_2' }>
   onOpeningsChange?: (openings: Opening[]) => void
   onClose: () => void
+  /** Режим встраивания для захвата в PDF */
+  embedOnly?: boolean
 }
 
-export function DetailPlanWallsWalls2({ project, onOpeningsChange, onClose }: Props) {
+export function DetailPlanWallsWalls2({ project, onOpeningsChange, onClose, embedOnly = false }: Props) {
   const data = project.data
   const principle: Principle = data.principle === 'outside' ? 'outside' : 'inside'
   const isInside = principle === 'inside'
-  const T = Math.max(0.05, Number(data.thickness) ?? 0.25)
-  const W = Math.max(0.1, Number(data.width) || 5)
-  const L = Math.max(0.1, Number(data.length) || 5)
+  const rawW = Number(data.width) ?? 0
+  const rawL = Number(data.length) ?? 0
+  const hasNoDimensions = rawW <= 0 && rawL <= 0
+  const T = Math.max(0.05, Number(data.thickness) ?? 0)
+  const W = Math.max(0.1, rawW || 5)
+  const L = Math.max(0.1, rawL || 5)
   const w = isInside ? W + T : W
   const l = isInside ? L + T : L
 
@@ -47,9 +54,39 @@ export function DetailPlanWallsWalls2({ project, onOpeningsChange, onClose }: Pr
   const svgRef = useRef<SVGSVGElement>(null)
   const dragRef = useRef<{ index: number; startX: number; startY: number; startOffset: number; wall: 1 | 2; startCursorAlongWall: number } | null>(null)
   const openingsRef = useRef(openings)
+  const onOpeningsChangeRef = useRef(onOpeningsChange)
+  onOpeningsChangeRef.current = onOpeningsChange
+  /** Во время перетаскивания — только эта позиция обновляется (для плавности), openings — при отпускании */
+  const [dragState, setDragState] = useState<{ index: number; wall: 1 | 2; offset: number } | null>(null)
   useEffect(() => {
     openingsRef.current = openings
   }, [openings])
+  const effectiveOpenings = useMemo(() => {
+    if (!dragState) return openings
+    const list = [...openings]
+    const o = list[dragState.index]
+    if (o) list[dragState.index] = { ...o, wall: dragState.wall, offset: dragState.offset }
+    return list
+  }, [openings, dragState])
+
+  // На телефоне pointerup может не дойти до SVG — слушаем document, чтобы сохранить положение при отпускании
+  useEffect(() => {
+    if (embedOnly) return
+    const handleDocPointerUp = () => {
+      if (!dragRef.current) return
+      const final = openingsRef.current
+      setOpenings(final)
+      onOpeningsChangeRef.current?.(final)
+      dragRef.current = null
+      setDragState(null)
+    }
+    document.addEventListener('pointerup', handleDocPointerUp)
+    document.addEventListener('pointercancel', handleDocPointerUp)
+    return () => {
+      document.removeEventListener('pointerup', handleDocPointerUp)
+      document.removeEventListener('pointercancel', handleDocPointerUp)
+    }
+  }, [embedOnly])
 
   const contentW = w * PX_PER_M
   const contentH = l * PX_PER_M
@@ -88,6 +125,7 @@ export function DetailPlanWallsWalls2({ project, onOpeningsChange, onClose }: Pr
       const contentY = svgP.y - oy - GRID_MARGIN_PX
       const startCursorAlongWall = wall === 1 ? contentX / px : contentY / px
       dragRef.current = { index, startX: e.clientX, startY: e.clientY, startOffset, wall, startCursorAlongWall }
+      setDragState({ index, wall, offset: startOffset })
       ;(e.target as SVGElement).setPointerCapture?.(e.pointerId)
     },
     [openings, ox, oy, px, GRID_MARGIN_PX]
@@ -142,12 +180,11 @@ export function DetailPlanWallsWalls2({ project, onOpeningsChange, onClose }: Pr
         dragRef.current.startOffset = newOffset
       }
       dragRef.current.wall = newWall
-      setOpenings((prev) => {
-        const next = [...prev]
-        const opening = next[index]
-        if (opening) next[index] = { ...opening, wall: newWall, offset: newOffset }
-        return next
-      })
+      const next = [...openings]
+      const opening = next[index]
+      if (opening) next[index] = { ...opening, wall: newWall, offset: newOffset }
+      openingsRef.current = next
+      setDragState((prev) => (prev && prev.index === index ? { ...prev, wall: newWall, offset: newOffset } : prev))
     },
     [openings, ox, oy, horY, totalH, totalW, vertX, w, l, T, px, GRID_MARGIN_PX]
   )
@@ -156,19 +193,43 @@ export function DetailPlanWallsWalls2({ project, onOpeningsChange, onClose }: Pr
     (e: React.PointerEvent) => {
       ;(e.target as SVGElement).releasePointerCapture?.(e.pointerId)
       if (dragRef.current) {
+        setOpenings(openingsRef.current)
         onOpeningsChange?.(openingsRef.current)
         dragRef.current = null
+        setDragState(null)
       }
     },
     [onOpeningsChange]
   )
 
-  if (T >= w || T >= l) {
+  const handleClose = () => {
+    if (!embedOnly && onOpeningsChange) onOpeningsChange(openingsRef.current)
+    setDragState(null)
+    onClose()
+  }
+
+  if (hasNoDimensions && !embedOnly) {
     return (
-      <div className="fixed inset-0 z-50 flex flex-col bg-stone-50">
+      <div className="fixed inset-0 z-50 flex flex-col bg-stone-50 pt-safe" style={{ paddingTop: 'max(var(--safe-top), 24px)' }}>
         <header className="flex shrink-0 items-center justify-between border-b border-stone-200 bg-white px-4 py-3 shadow-sm">
           <h2 className="text-lg font-semibold text-stone-800">Стены — план</h2>
-          <button type="button" onClick={onClose} className="rounded-lg bg-stone-200 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-300">
+          <button type="button" onClick={handleClose} className="rounded-lg bg-stone-200 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-300">
+            Закрыть
+          </button>
+        </header>
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-4 text-center">
+          <p className="text-stone-600">Введите параметры стен (ширину и длину), чтобы отобразить план.</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (T >= w || T >= l) {
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col bg-stone-50 pt-safe" style={{ paddingTop: 'max(var(--safe-top), 24px)' }}>
+        <header className="flex shrink-0 items-center justify-between border-b border-stone-200 bg-white px-4 py-3 shadow-sm">
+          <h2 className="text-lg font-semibold text-stone-800">Стены — план</h2>
+          <button type="button" onClick={handleClose} className="rounded-lg bg-stone-200 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-300">
             Закрыть
           </button>
         </header>
@@ -190,8 +251,8 @@ export function DetailPlanWallsWalls2({ project, onOpeningsChange, onClose }: Pr
   // Последний сегмент: от конца проёма до фактического конца стены, длина не меньше T (область пересечения).
   const wall1Max = w
   const wall2Max = l
-  const wall1Openings = openings.filter((o) => (o.wall ?? 1) === 1).sort((a, b) => (a.offset ?? 0) - (b.offset ?? 0))
-  const wall2Openings = openings.filter((o) => (o.wall ?? 1) === 2).sort((a, b) => (a.offset ?? 0) - (b.offset ?? 0))
+  const wall1Openings = effectiveOpenings.filter((o) => (o.wall ?? 1) === 1).sort((a, b) => (a.offset ?? 0) - (b.offset ?? 0))
+  const wall2Openings = effectiveOpenings.filter((o) => (o.wall ?? 1) === 2).sort((a, b) => (a.offset ?? 0) - (b.offset ?? 0))
   const segments1: { start: number; end: number; length: number }[] = []
   let s1 = 0
   if (wall1Openings.length > 0) {
@@ -309,27 +370,17 @@ export function DetailPlanWallsWalls2({ project, onOpeningsChange, onClose }: Pr
   const fontSz = DIMENSION_FONT_SIZE * textScale
   const tick45 = DIM_TICK_45 * textScale
 
-  return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-stone-50">
-      <header className="flex shrink-0 items-center justify-between border-b border-stone-200 bg-white px-4 py-3 shadow-sm">
-        <h2 className="text-lg font-semibold text-stone-800">Стены — план</h2>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-lg bg-stone-200 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-300"
-        >
-          Закрыть
-        </button>
-      </header>
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4">
+  const content = (
+      <div className={embedOnly ? 'bg-white p-4' : 'min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4'} style={embedOnly ? { width: 800 } : undefined} data-pdf-plan={embedOnly ? 'walls' : undefined}>
         <svg
           ref={svgRef}
           viewBox={`0 0 ${svgW} ${svgH}`}
           className="block w-full max-w-full h-auto rounded-lg border border-stone-200 bg-white shadow-sm"
           preserveAspectRatio="xMidYMid meet"
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerLeave={handlePointerUp}
+          style={!embedOnly ? { touchAction: 'none' } : undefined}
+          onPointerMove={embedOnly ? undefined : handlePointerMove}
+          onPointerUp={embedOnly ? undefined : handlePointerUp}
+          onPointerLeave={embedOnly ? undefined : handlePointerUp}
         >
           <defs>
             <pattern id="grid-w2" width={GRID_CELL_PX} height={GRID_CELL_PX} patternUnits="userSpaceOnUse">
@@ -340,7 +391,7 @@ export function DetailPlanWallsWalls2({ project, onOpeningsChange, onClose }: Pr
             <rect x={0} y={0} width={gridW} height={gridH} fill="url(#grid-w2)" stroke="#d6d3d1" strokeWidth="1" />
             <g transform={`translate(${GRID_MARGIN_PX}, ${GRID_MARGIN_PX})`}>
               <path d={stripPath} fillRule="evenodd" fill="rgba(168,162,158,0.4)" stroke="#57534e" strokeWidth="1.5" strokeLinejoin="miter" strokeLinecap="butt" />
-              {openings.map((o, i) => {
+              {effectiveOpenings.map((o, i) => {
                 const wall = (o.wall ?? 1) as 1 | 2
                 const offset = o.offset ?? 0
                 const ow = o.width ?? 0.9
@@ -351,10 +402,14 @@ export function DetailPlanWallsWalls2({ project, onOpeningsChange, onClose }: Pr
                   const xDraw = effW > 0 ? xPx : vertX - 4
                   const cx = xDraw + wPxDraw / 2
                   const cy = horY + tPx / 2
+                  const hitX = Math.max(0, xDraw - TOUCH_HIT_PADDING)
+                  const hitY = Math.max(0, horY - TOUCH_HIT_PADDING)
+                  const hitW = Math.min(totalW - hitX, wPxDraw + 2 * TOUCH_HIT_PADDING)
+                  const hitH = Math.min(totalH - hitY, tPx + 2 * TOUCH_HIT_PADDING)
                   return (
                     <g key={i}>
                       <rect x={xDraw} y={horY} width={wPxDraw} height={tPx} fill="#fafaf9" stroke="#57534e" strokeWidth="1.5" />
-                      <rect x={xDraw} y={horY} width={wPxDraw} height={tPx} fill="transparent" cursor="grab" onPointerDown={(ev) => handlePointerDown(ev, i)} />
+                      <rect x={hitX} y={hitY} width={hitW} height={hitH} fill="transparent" cursor={embedOnly ? 'default' : 'grab'} onPointerDown={embedOnly ? undefined : (ev) => handlePointerDown(ev, i)} />
                       <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle" fill="#292524" fontSize={11} fontFamily="sans-serif" pointerEvents="none">{effW > 0 ? fmtRu(effW) + ' м' : ''}</text>
                     </g>
                   )
@@ -365,10 +420,14 @@ export function DetailPlanWallsWalls2({ project, onOpeningsChange, onClose }: Pr
                 const yDraw = effW > 0 ? yPx : horY - 4
                 const cx = vertX + tPx / 2
                 const cy = yDraw + hPxDraw / 2
+                const hitX = Math.max(0, vertX - TOUCH_HIT_PADDING)
+                const hitY = Math.max(0, yDraw - TOUCH_HIT_PADDING)
+                const hitW = Math.min(totalW - hitX, tPx + 2 * TOUCH_HIT_PADDING)
+                const hitH = Math.min(totalH - hitY, hPxDraw + 2 * TOUCH_HIT_PADDING)
                 return (
                   <g key={i}>
                     <rect x={vertX} y={yDraw} width={tPx} height={hPxDraw} fill="#fafaf9" stroke="#57534e" strokeWidth="1.5" />
-                    <rect x={vertX} y={yDraw} width={tPx} height={hPxDraw} fill="transparent" cursor="grab" onPointerDown={(ev) => handlePointerDown(ev, i)} />
+                    <rect x={hitX} y={hitY} width={hitW} height={hitH} fill="transparent" cursor={embedOnly ? 'default' : 'grab'} onPointerDown={embedOnly ? undefined : (ev) => handlePointerDown(ev, i)} />
                     <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle" fill="#292524" fontSize={11} fontFamily="sans-serif" pointerEvents="none" transform={`rotate(-90, ${cx}, ${cy})`}>{effW > 0 ? fmtRu(effW) + ' м' : ''}</text>
                   </g>
                 )
@@ -417,8 +476,24 @@ export function DetailPlanWallsWalls2({ project, onOpeningsChange, onClose }: Pr
             </g>
           </g>
         </svg>
-        <p className="mt-3 text-center text-sm text-stone-500">1 клетка = 0,5 м · Г-образные стены · наружная и внутренняя грани · перетаскивайте проёмы вдоль стен</p>
+        {!embedOnly && <p className="mt-3 text-center text-sm text-stone-500">1 клетка = 0,5 м · Г-образные стены · наружная и внутренняя грани · перетаскивайте проёмы вдоль стен</p>}
       </div>
+  )
+  if (embedOnly) return content
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-stone-50 pt-safe" style={{ paddingTop: 'max(var(--safe-top), 24px)' }}>
+      <header className="flex shrink-0 items-center justify-between border-b border-stone-200 bg-white px-4 py-3 shadow-sm">
+        <h2 className="text-lg font-semibold text-stone-800">Стены — план</h2>
+        <button
+          type="button"
+          onClick={handleClose}
+          className="rounded-lg bg-stone-200 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-300"
+        >
+          Закрыть
+        </button>
+      </header>
+      {content}
     </div>
   )
 }

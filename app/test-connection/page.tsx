@@ -14,7 +14,7 @@ export default function TestConnectionPage() {
     setMessage('Проверка подключения...')
 
     try {
-      const { data, error } = await supabase.from('_test').select('*').limit(1)
+      const { error } = await supabase.from('_test').select('*').limit(1)
 
       if (error) {
         // Это нормально, если таблицы нет - значит подключение работает
@@ -28,9 +28,10 @@ export default function TestConnectionPage() {
         setStatus('success')
         setMessage('✅ Подключение к Supabase работает!')
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       setStatus('error')
-      setMessage(`❌ Ошибка: ${error.message || 'Не удалось подключиться к Supabase'}`)
+      const msg = error instanceof Error ? error.message : String(error)
+      setMessage(`❌ Ошибка: ${msg || 'Не удалось подключиться к Supabase'}`)
     }
   }
 

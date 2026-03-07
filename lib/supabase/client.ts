@@ -1,18 +1,30 @@
 import { createBrowserClient } from '@supabase/ssr'
 import { getSupabaseConfig } from '@/lib/config/supabase'
 
+/** Сетевая ошибка при обращении к Supabase (нет связи, CORS, таймаут). Не меняем URL/ключи — только обрабатываем отказ сети. */
+export function isSupabaseNetworkError(err: unknown): boolean {
+  if (!err) return false
+  const msg = err instanceof Error ? err.message : String(err)
+  const name = err instanceof Error ? (err as Error & { name?: string }).name : ''
+  return (
+    msg === 'Failed to fetch' ||
+    (typeof msg === 'string' && msg.toLowerCase().includes('failed to fetch')) ||
+    name === 'AuthRetryableFetchError'
+  )
+}
+
 // Получаем URL и ключ из различных источников
 function getSupabaseUrl(): string {
   // 1. Попробуем получить из window (может быть установлено в runtime)
   if (typeof window !== 'undefined') {
     // Проверяем глобальную конфигурацию
-    const globalConfig = (window as any).__SUPABASE_CONFIG__
+    const globalConfig = (window as Window & { __SUPABASE_CONFIG__?: { url?: string; key?: string } }).__SUPABASE_CONFIG__
     if (globalConfig?.url) {
       return globalConfig.url
     }
     
     // Проверяем capacitorConfig (для совместимости)
-    const capacitorConfig = (window as any).capacitorConfig
+    const capacitorConfig = (window as Window & { capacitorConfig?: { supabaseUrl?: string; supabaseAnonKey?: string } }).capacitorConfig
     if (capacitorConfig?.supabaseUrl) {
       return capacitorConfig.supabaseUrl
     }
@@ -30,7 +42,7 @@ function getSupabaseUrl(): string {
     console.error('NEXT_PUBLIC_SUPABASE_URL не установлен!')
     console.error('Доступные источники:', {
       hasWindow: typeof window !== 'undefined',
-      hasGlobalConfig: typeof window !== 'undefined' && !!(window as any).__SUPABASE_CONFIG__,
+      hasGlobalConfig: typeof window !== 'undefined' && !!(window as Window & { __SUPABASE_CONFIG__?: unknown }).__SUPABASE_CONFIG__,
       hasProcessEnv: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
     })
     throw new Error('Конфигурация Supabase не найдена. Проверьте переменные окружения или настройки приложения.')
@@ -41,12 +53,12 @@ function getSupabaseUrl(): string {
 function getSupabaseKey(): string {
   // 1. Попробуем получить из window (может быть установлено в runtime)
   if (typeof window !== 'undefined') {
-    const globalConfig = (window as any).__SUPABASE_CONFIG__
+    const globalConfig = (window as Window & { __SUPABASE_CONFIG__?: { url?: string; key?: string } }).__SUPABASE_CONFIG__
     if (globalConfig?.key) {
       return globalConfig.key
     }
     
-    const capacitorConfig = (window as any).capacitorConfig
+    const capacitorConfig = (window as Window & { capacitorConfig?: { supabaseUrl?: string; supabaseAnonKey?: string } }).capacitorConfig
     if (capacitorConfig?.supabaseAnonKey) {
       return capacitorConfig.supabaseAnonKey
     }
@@ -71,15 +83,6 @@ export function createClient() {
   const url = getSupabaseUrl()
   const key = getSupabaseKey()
   
-  console.log('Создание Supabase клиента:', { 
-    url: url ? url.substring(0, 30) + '...' : 'ПУСТО', 
-    hasKey: !!key,
-    urlLength: url ? url.length : 0,
-    keyLength: key ? key.length : 0,
-    urlFull: url ? url : 'НЕТ URL',
-    keyPreview: key ? key.substring(0, 20) + '...' : 'НЕТ KEY'
-  })
-  
   if (!url || !key) {
     const errorMsg = `Не удалось получить конфигурацию Supabase. URL: ${url ? 'есть' : 'ОТСУТСТВУЕТ'}, Key: ${key ? 'есть' : 'ОТСУТСТВУЕТ'}`
     console.error(errorMsg)
@@ -97,7 +100,8 @@ export function createClient() {
       autoRefreshToken: true,
       detectSessionInUrl: true,
       flowType: 'pkce',
-      storage: typeof window !== 'undefined' ? window.localStorage : undefined
+      storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+      lock: async <R>(_name: string, _acquireTimeout: number, fn: () => Promise<R>) => fn(),
     }
   })
 }

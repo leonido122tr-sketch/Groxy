@@ -1,7 +1,7 @@
 'use client'
 
-import Walls3Calculator from './walls3Calculator'
+import ProjectHub from '../ProjectHub'
 
-export default function Walls3Page() {
-  return <Walls3Calculator mode="create" />
+export default function Walls3ProjectPage() {
+  return <ProjectHub projectType="walls_3" title="Пристрой 3 стены" />
 }

@@ -1,0 +1,1 @@
+(globalThis.TURBOPACK||(globalThis.TURBOPACK=[])).push(["object"==typeof document?document.currentScript:void 0,29621,e=>{"use strict";var o=e.i(82568);class b extends o.WebPlugin{async openFile(e){if(!e.blob)throw Error(b.ERROR_BLOB_MISSING);let o=URL.createObjectURL(e.blob);window.open(o,"_blank")}}b.ERROR_BLOB_MISSING="blob must be provided.",e.s(["FileOpenerWeb",()=>b])}]);

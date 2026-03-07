@@ -38,10 +38,6 @@
         </provider>
     </application>
 
-    <!-- Permissions -->
-
+    <!-- Permissions: только INTERNET. Сохранение/открытие PDF и проектов — через app-specific storage (getFilesDir) и FileProvider, без доступа к общему хранилищу (соответствует политике Google Play: No All files access). -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" android:minSdkVersion="30" tools:ignore="ScopedStorage" />
 </manifest>

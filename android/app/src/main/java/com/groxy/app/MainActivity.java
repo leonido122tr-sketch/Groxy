@@ -60,9 +60,9 @@ public class MainActivity extends BridgeActivity {
                 byte[] pdfBytes = Base64.decode(base64Data, Base64.DEFAULT);
                 Log.d(TAG, "Decoded " + pdfBytes.length + " bytes");
                 
-                FileOutputStream fos = new FileOutputStream(pdfFile);
-                fos.write(pdfBytes);
-                fos.close();
+                try (FileOutputStream fos = new FileOutputStream(pdfFile)) {
+                    fos.write(pdfBytes);
+                }
                 Log.d(TAG, "File written successfully");
 
                 Uri fileUri = null;
@@ -75,7 +75,9 @@ public class MainActivity extends BridgeActivity {
                     Log.d(TAG, "FileProvider URI: " + fileUri.toString());
                 } catch (Exception e) {
                     Log.w(TAG, "FileProvider failed: " + e.getMessage());
-                    fileUri = Uri.fromFile(pdfFile);
+                    @SuppressWarnings("deprecation")
+                    Uri fallback = Uri.fromFile(pdfFile);
+                    fileUri = fallback;
                     Log.d(TAG, "Using file:// URI: " + fileUri.toString());
                 }
 
@@ -115,10 +117,9 @@ public class MainActivity extends BridgeActivity {
                 }
 
                 File projectFile = new File(projectsDir, projectId + ".json");
-                FileOutputStream fos = new FileOutputStream(projectFile);
-                fos.write(projectJson.getBytes(StandardCharsets.UTF_8));
-                fos.close();
-                
+                try (FileOutputStream fos = new FileOutputStream(projectFile)) {
+                    fos.write(projectJson.getBytes(StandardCharsets.UTF_8));
+                }
                 Log.d(TAG, "Project saved: " + projectFile.getAbsolutePath());
                 return "{\"success\":true}";
             } catch (Exception e) {
@@ -139,12 +140,9 @@ public class MainActivity extends BridgeActivity {
                     File[] files = projectsDir.listFiles((dir, name) -> name.endsWith(".json"));
                     if (files != null) {
                         for (File file : files) {
-                            try {
-                                FileInputStream fis = new FileInputStream(file);
+                            try (FileInputStream fis = new FileInputStream(file)) {
                                 byte[] buffer = new byte[(int) file.length()];
                                 fis.read(buffer);
-                                fis.close();
-                                
                                 String content = new String(buffer, StandardCharsets.UTF_8);
                                 JSONObject project = new JSONObject(content);
                                 projects.put(project);
@@ -200,7 +198,9 @@ public class MainActivity extends BridgeActivity {
                         pdfFile
                     );
                 } catch (Exception e) {
-                    fileUri = Uri.fromFile(pdfFile);
+                    @SuppressWarnings("deprecation")
+                    Uri fallback = Uri.fromFile(pdfFile);
+                    fileUri = fallback;
                 }
                 
                 JSONObject result = new JSONObject();
@@ -224,18 +224,40 @@ public class MainActivity extends BridgeActivity {
                     return "{\"error\":\"File not found\"}";
                 }
                 
-                FileInputStream fis = new FileInputStream(pdfFile);
-                byte[] buffer = new byte[(int) pdfFile.length()];
-                fis.read(buffer);
-                fis.close();
-                
-                String base64 = Base64.encodeToString(buffer, Base64.NO_WRAP);
+                String base64;
+                try (FileInputStream fis = new FileInputStream(pdfFile)) {
+                    byte[] buffer = new byte[(int) pdfFile.length()];
+                    fis.read(buffer);
+                    base64 = Base64.encodeToString(buffer, Base64.NO_WRAP);
+                }
                 Log.d(TAG, "PDF converted to base64, length: " + base64.length());
                 
                 return base64;
             } catch (Exception e) {
                 Log.e(TAG, "Error getting PDF base64: " + e.getMessage(), e);
                 return "{\"error\":\"" + e.getMessage() + "\"}";
+            }
+        }
+
+        @JavascriptInterface
+        public String listPdfs() {
+            Log.d(TAG, "listPdfs called");
+            try {
+                JSONArray files = new JSONArray();
+                File dataDir = getFilesDir();
+                File pdfsDir = new File(dataDir, PDFS_DIR);
+                if (pdfsDir.exists() && pdfsDir.isDirectory()) {
+                    File[] list = pdfsDir.listFiles((dir, name) -> name.endsWith(".pdf"));
+                    if (list != null) {
+                        for (File f : list) {
+                            files.put(f.getName());
+                        }
+                    }
+                }
+                return files.toString();
+            } catch (Exception e) {
+                Log.e(TAG, "Error listing PDFs: " + e.getMessage(), e);
+                return "[]";
             }
         }
     }

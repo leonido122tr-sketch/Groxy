@@ -3,15 +3,23 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, Download } from 'lucide-react'
-import { makeProjectId, upsertLocalProject, listLocalProjects, deleteLocalProject, type LocalProject, type Opening, type Principle } from '@/lib/projects/localProjects'
-import { saveProjectToDevice, listDeviceProjects, deleteDeviceProject } from '@/lib/projects/deviceProjects'
+import { ArrowLeft, ChevronDown, Maximize2, Pencil } from 'lucide-react'
+import { makeProjectId, upsertLocalProject, listLocalProjects, type LocalProject, type Opening, type Principle } from '@/lib/projects/localProjects'
+import { getFoundationRoofOverridesFromStorage, setWallsOverridesInStorage } from '@/lib/projects/resultOverridesStorage'
+import { saveProjectToDevice, listDeviceProjects } from '@/lib/projects/deviceProjects'
 import { Capacitor } from '@capacitor/core'
+import { getWalls4PdfExtrasFromStorage } from '@/lib/pdf/getWalls4PdfExtras'
 
 type Props = {
   mode: 'create' | 'edit'
   projectId?: string
   initialProject?: Extract<LocalProject, { type: 'walls_4' }>
+  /** При true не показывать шапку (используется на странице просмотра с вкладками) */
+  embedInView?: boolean
+  /** При клике на визуализацию открыть детальный план (только при embedInView) */
+  onSchemaClick?: () => void
+  /** При изменении проёмов (добавление/удаление) — чтобы проект и большая визуализация получали актуальные данные */
+  onOpeningsChange?: (openings: Opening[]) => void
 }
 
 type MaterialOption = { value: string; label: string }
@@ -68,40 +76,76 @@ function sanitizeRuDecimalInput(raw: string, maxDecimals = 2) {
   return out
 }
 
-export default function Walls4Calculator({ mode, projectId, initialProject }: Props) {
+// Читаем из sessionStorage при монтировании (как у Фундамента), чтобы значения не терялись при переключении обзор ↔ Стены (и при создании, и при просмотре)
+function readWalls4InitFromStorage(mode: string, projectId?: string, initialProjectId?: string): Record<string, unknown> | null {
+  if (typeof window === 'undefined') return null
+  const raw = sessionStorage.getItem('currentProjectData_walls_4')
+  if (!raw) return null
+  try {
+    const data = JSON.parse(raw) as Record<string, unknown>
+    if (mode === 'edit') {
+      const activeId = projectId ?? initialProjectId ?? ''
+      if (activeId && String(data.projectId || '') !== activeId) return null
+    }
+    const w = Number(data.width ?? 0), len = Number(data.length ?? 0), h = Number(data.height ?? 0), t = Number(data.thickness ?? 0)
+    if (w > 0 || len > 0 || h > 0 || t > 0 || (data.name && String(data.name).trim()) || (data.material && String(data.material))) return data
+    return null
+  } catch {
+    return null
+  }
+}
+
+export default function Walls4Calculator({ mode, projectId, initialProject, embedInView, onSchemaClick, onOpeningsChange }: Props) {
   const router = useRouter()
   const init = initialProject?.data
+  const storageInit = useMemo(() => readWalls4InitFromStorage(mode, projectId, initialProject?.id), [mode, projectId, initialProject?.id])
 
   const [toast, setToast] = useState<string | null>(null)
   const [savedPdfUri, setSavedPdfUri] = useState<string | null>(null)
   const [isMaterialOpen, setIsMaterialOpen] = useState(false)
   const [overwriteModalProject, setOverwriteModalProject] = useState<LocalProject | null>(null)
-  const [pendingSave, setPendingSave] = useState<boolean>(false)
+  const [, setPendingSave] = useState<boolean>(false)
   const [isProjectSaved, setIsProjectSaved] = useState<boolean>(!!initialProject)
   const [currentProjectId, setCurrentProjectId] = useState<string>(projectId ?? initialProject?.id ?? '') // ID текущего проекта
-  const [showSaveBeforeExitModal, setShowSaveBeforeExitModal] = useState<boolean>(false)
-  const [pendingExit, setPendingExit] = useState<(() => void) | null>(null)
-
-  const [principle, setPrinciple] = useState<Principle>(init?.principle ?? 'inside')
-  const [projectName, setProjectName] = useState(initialProject?.name ?? '')
-  const [material, setMaterial] = useState(init?.material ?? '')
+  const [principle, setPrinciple] = useState<Principle>((storageInit?.principle as Principle) ?? init?.principle ?? 'inside')
+  const [projectName, setProjectName] = useState(String(storageInit?.name ?? initialProject?.name ?? ''))
+  const [material, setMaterial] = useState(String(storageInit?.material ?? init?.material ?? ''))
+  const [pdfComment, setPdfComment] = useState(initialProject?.pdfComment ?? '')
+  const [, setNotes] = useState(initialProject?.notes ?? '')
 
   // 4 walls (rectangle): keep side selection like 2-walls: width + length only
   const [activeWall, setActiveWall] = useState<1 | 2>(1)
 
-  const [widthText, setWidthText] = useState(init ? formatRu(init.width) : '')
-  const [lengthText, setLengthText] = useState(init ? formatRu(init.length) : '')
+  const [widthText, setWidthText] = useState(() => {
+    const v = storageInit ? Number(storageInit.width ?? 0) : (init?.width ?? 0)
+    return v > 0 ? formatRu(v) : (init && init.width !== 0 ? formatRu(init.width) : '')
+  })
+  const [lengthText, setLengthText] = useState(() => {
+    const v = storageInit ? Number(storageInit.length ?? 0) : (init?.length ?? 0)
+    return v > 0 ? formatRu(v) : (init && init.length !== 0 ? formatRu(init.length) : '')
+  })
 
-  const [width, setWidth] = useState(init?.width ?? 0)
-  const [length, setLength] = useState(init?.length ?? 0)
+  const [width, setWidth] = useState(storageInit ? Number(storageInit.width ?? 0) : (init?.width ?? 0))
+  const [length, setLength] = useState(storageInit ? Number(storageInit.length ?? 0) : (init?.length ?? 0))
 
-  const [heightText, setHeightText] = useState(init ? formatRu(init.height) : '')
-  const [thicknessText, setThicknessText] = useState(init ? formatRu(init.thickness) : '')
-  const [height, setHeight] = useState(init?.height ?? 0)
-  const [thickness, setThickness] = useState(init?.thickness ?? 0)
+  const [heightText, setHeightText] = useState(() => {
+    const v = storageInit ? Number(storageInit.height ?? 0) : (init?.height ?? 0)
+    return v > 0 ? formatRu(v) : (init && init.height !== 0 ? formatRu(init.height) : '')
+  })
+  const [thicknessText, setThicknessText] = useState(() => {
+    const v = storageInit ? Number(storageInit.thickness ?? 0) : (init?.thickness ?? 0)
+    return v > 0 ? formatRu(v) : (init && init.thickness !== 0 ? formatRu(init.thickness) : '')
+  })
+  const [height, setHeight] = useState(storageInit ? Number(storageInit.height ?? 0) : (init?.height ?? 0))
+  const [thickness, setThickness] = useState(storageInit ? Number(storageInit.thickness ?? 0) : (init?.thickness ?? 0))
 
   const widthRef = useRef<HTMLInputElement | null>(null)
   const lengthRef = useRef<HTMLInputElement | null>(null)
+  const hasMountedRef = useRef(false)
+  const embedInViewRef = useRef(embedInView)
+  embedInViewRef.current = embedInView
+  /** В edit: не ставить dirty при следующем запуске persist (после восстановления из sessionStorage) */
+  const skipDirtyAfterRestoreRef = useRef(false)
   // Стабильный ID черновика (нужен, чтобы можно было удалить его при "выйти без сохранения")
   const draftIdRef = useRef<string>('')
   // Жёсткая защита от автосохранения: сохраняем проект ТОЛЬКО при явном действии пользователя.
@@ -109,21 +153,43 @@ export default function Walls4Calculator({ mode, projectId, initialProject }: Pr
 
   const runUserInitiatedSave = async <T,>(fn: () => Promise<T>): Promise<T> => {
     userInitiatedSaveRef.current = true
-    ;(window as any).__GROXY_ALLOW_DEVICE_PROJECT_SAVE__ = true
+    ;(window as Window & { __GROXY_ALLOW_DEVICE_PROJECT_SAVE__?: boolean }).__GROXY_ALLOW_DEVICE_PROJECT_SAVE__ = true
     try {
       return await fn()
     } finally {
       userInitiatedSaveRef.current = false
-      ;(window as any).__GROXY_ALLOW_DEVICE_PROJECT_SAVE__ = false
+      ;(window as Window & { __GROXY_ALLOW_DEVICE_PROJECT_SAVE__?: boolean }).__GROXY_ALLOW_DEVICE_PROJECT_SAVE__ = false
     }
   }
 
-  const [openings, setOpenings] = useState<Opening[]>(init?.openings ?? [])
+  const [openings, setOpenings] = useState<Opening[]>(Array.isArray(storageInit?.openings) ? (storageInit.openings as Opening[]) : (init?.openings ?? []))
   const [isAddingOpening, setIsAddingOpening] = useState(false)
   const [openingWidthText, setOpeningWidthText] = useState('')
   const [openingHeightText, setOpeningHeightText] = useState('')
-  const [includePdfMeta, setIncludePdfMeta] = useState(false)
-  const [note, setNote] = useState(init?.note ?? '')
+  const [includePdfMeta] = useState(false)
+  const [note, setNote] = useState(String(storageInit?.note ?? init?.note ?? ''))
+  const [resultsOverrides, setResultsOverrides] = useState<{ wallsArea?: number; wallsVolume?: number }>(initialProject?.resultsOverrides ?? {})
+  const [editingResult, setEditingResult] = useState<'wallsArea' | 'wallsVolume' | null>(null)
+  const [editResultValue, setEditResultValue] = useState('')
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    setWallsOverridesInStorage('4', resultsOverrides)
+    const initialOverrides = initialProject?.resultsOverrides ?? {}
+    const overridesChanged = JSON.stringify(resultsOverrides) !== JSON.stringify(initialOverrides)
+    if (overridesChanged) {
+      sessionStorage.setItem('projectIsDirty', 'true')
+      window.dispatchEvent(new CustomEvent('projectDataChanged'))
+    }
+  }, [resultsOverrides, initialProject?.resultsOverrides, embedInView])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || initialProject) return
+    const sComment = sessionStorage.getItem('pdfComment_walls_4')
+    const sNotes = sessionStorage.getItem('notes_walls_4')
+    if (sComment != null) setPdfComment(sComment)
+    if (sNotes != null) setNotes(sNotes)
+  }, [initialProject])
 
   const dims = useMemo(() => {
     return {
@@ -133,6 +199,186 @@ export default function Walls4Calculator({ mode, projectId, initialProject }: Pr
       thickness: clampNonNeg(thickness),
     }
   }, [width, length, height, thickness])
+
+  // Сохраняем черновик и изменения в sessionStorage для восстановления при возврате и для большой визуализации.
+  // В embedInView всегда пишем в sessionStorage (чтобы большая визуализация видела данные), но не диспатчим projectDataChanged (чтобы не было цикла).
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const activeProjectId = currentProjectId || projectId || initialProject?.id || ''
+    const hasData =
+      dims.width > 0 ||
+      dims.length > 0 ||
+      dims.height > 0 ||
+      dims.thickness > 0 ||
+      projectName.trim() !== '' ||
+      material !== '' ||
+      openings.length > 0
+    if (!hasData) return
+    const projectData = {
+      projectId: activeProjectId,
+      name: projectName.trim() || 'Проект',
+      material,
+      principle,
+      width: dims.width,
+      length: dims.length,
+      height: dims.height,
+      thickness: dims.thickness,
+      openings,
+      note,
+    }
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true
+      sessionStorage.setItem('currentProjectData_walls_4', JSON.stringify(projectData))
+      // При первом вводе в режиме просмотра помечаем dirty, чтобы при возврате на обзор не перезаписать storage сохранённым проектом
+      if (embedInViewRef.current && mode === 'edit' && initialProject) {
+        const initData = initialProject.data as { width?: number; length?: number; height?: number; thickness?: number; material?: string; principle?: string; openings?: unknown[]; note?: string }
+        const dataChanged =
+          (projectName.trim() || 'Проект') !== (initialProject.name?.trim() || 'Проект') ||
+          material !== (initData?.material ?? '') ||
+          principle !== (initData?.principle ?? 'inside') ||
+          dims.width !== (initData?.width ?? 0) ||
+          dims.length !== (initData?.length ?? 0) ||
+          dims.height !== (initData?.height ?? 0) ||
+          dims.thickness !== (initData?.thickness ?? 0) ||
+          JSON.stringify(openings) !== JSON.stringify(initData?.openings ?? []) ||
+          (note.trim() || '') !== (initData?.note ?? '')
+        if (dataChanged) {
+          sessionStorage.setItem('projectIsDirty', 'true')
+          try {
+            window.dispatchEvent(new CustomEvent('projectDataChanged'))
+          } catch {}
+        }
+      }
+      return
+    }
+    if (mode === 'edit' && skipDirtyAfterRestoreRef.current) {
+      skipDirtyAfterRestoreRef.current = false
+      sessionStorage.setItem('currentProjectData_walls_4', JSON.stringify(projectData))
+      return
+    }
+    sessionStorage.setItem('currentProjectData_walls_4', JSON.stringify(projectData))
+    if (!embedInViewRef.current) {
+      if (mode === 'edit' && initialProject) {
+        const init = initialProject.data as { width?: number; length?: number; height?: number; thickness?: number; material?: string; principle?: string; openings?: unknown[]; note?: string }
+        const dataChanged =
+          (projectName.trim() || 'Проект') !== (initialProject.name?.trim() || 'Проект') ||
+          material !== (init?.material ?? '') ||
+          principle !== (init?.principle ?? 'inside') ||
+          dims.width !== (init?.width ?? 0) ||
+          dims.length !== (init?.length ?? 0) ||
+          dims.height !== (init?.height ?? 0) ||
+          dims.thickness !== (init?.thickness ?? 0) ||
+          JSON.stringify(openings) !== JSON.stringify(init?.openings ?? []) ||
+          (note.trim() || '') !== (init?.note ?? '')
+        if (!dataChanged) return
+      }
+      sessionStorage.setItem('projectIsDirty', 'true')
+      try {
+        window.dispatchEvent(new CustomEvent('projectDataChanged'))
+      } catch {}
+    }
+  }, [mode, projectName, material, principle, dims.width, dims.length, dims.height, dims.thickness, openings, note, currentProjectId, projectId, initialProject, embedInView])
+
+  // В режиме редактирования восстанавливаем последние изменения из sessionStorage
+  useEffect(() => {
+    if (mode !== 'edit' || typeof window === 'undefined') return
+    const activeProjectId = currentProjectId || projectId || initialProject?.id || ''
+    if (!activeProjectId) return
+    const raw = sessionStorage.getItem('currentProjectData_walls_4')
+    if (!raw) return
+    try {
+      const data = JSON.parse(raw) as Record<string, unknown>
+      if (String(data.projectId || '') !== activeProjectId) return
+      const w = Number(data.width ?? 0)
+      const len = Number(data.length ?? 0)
+      const h = Number(data.height ?? 0)
+      const t = Number(data.thickness ?? 0)
+      if (w > 0 || len > 0 || h > 0 || t > 0 || (data.name && String(data.name).trim()) || (data.material && String(data.material))) {
+        skipDirtyAfterRestoreRef.current = true
+        if (data.name != null) setProjectName(String(data.name))
+        if (data.material != null) setMaterial(String(data.material))
+        if (data.principle === 'inside' || data.principle === 'outside') setPrinciple(data.principle)
+        setWidth(w)
+        setLength(len)
+        setHeight(h)
+        setThickness(t)
+        setWidthText(w > 0 ? formatRu(w) : '')
+        setLengthText(len > 0 ? formatRu(len) : '')
+        setHeightText(h > 0 ? formatRu(h) : '')
+        setThicknessText(t > 0 ? formatRu(t) : '')
+        if (Array.isArray(data.openings)) setOpenings(data.openings as Opening[])
+        if (data.note != null) setNote(String(data.note))
+      }
+    } catch {
+      // ignore
+    }
+  }, [mode, currentProjectId, projectId, initialProject])
+
+  // В режиме создания: при монтировании восстанавливаем черновик из sessionStorage (как в walls-2)
+  useEffect(() => {
+    if (mode !== 'create' || initialProject || typeof window === 'undefined') return
+    const raw = sessionStorage.getItem('currentProjectData_walls_4')
+    if (!raw) return
+    try {
+      const data = JSON.parse(raw) as Record<string, unknown>
+      const w = Number(data.width ?? 0)
+      const len = Number(data.length ?? 0)
+      const h = Number(data.height ?? 0)
+      const t = Number(data.thickness ?? 0)
+      if (w > 0 || len > 0 || h > 0 || t > 0 || (data.name && String(data.name).trim()) || (data.material && String(data.material))) {
+        if (data.name != null) setProjectName(String(data.name))
+        if (data.material != null) setMaterial(String(data.material))
+        if (data.principle === 'inside' || data.principle === 'outside') setPrinciple(data.principle as 'inside' | 'outside')
+        setWidth(w)
+        setLength(len)
+        setHeight(h)
+        setThickness(t)
+        setWidthText(w > 0 ? formatRu(w) : '')
+        setLengthText(len > 0 ? formatRu(len) : '')
+        setHeightText(h > 0 ? formatRu(h) : '')
+        setThicknessText(t > 0 ? formatRu(t) : '')
+        if (Array.isArray(data.openings)) setOpenings(data.openings as Opening[])
+        if (data.note != null) setNote(String(data.note))
+      }
+    } catch {
+      // ignore
+    }
+  }, [mode, initialProject])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const handler = (e: Event) => {
+      const d = (e as CustomEvent<{ type: string }>).detail
+      if (d?.type !== 'walls_4') return
+      try {
+        const raw = sessionStorage.getItem('currentProjectData_walls_4')
+        if (!raw) return
+        const data = JSON.parse(raw) as { openings?: Opening[] }
+        if (Array.isArray(data.openings)) setOpenings(data.openings)
+      } catch {
+        // ignore
+      }
+    }
+    window.addEventListener('wallsPlanClosed', handler)
+    return () => window.removeEventListener('wallsPlanClosed', handler)
+  }, [])
+
+  // Синхронизация проёмов при сохранении из большой визуализации (onOpeningsChange → projectDataChanged)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const handler = () => {
+      try {
+        const raw = sessionStorage.getItem('currentProjectData_walls_4')
+        if (!raw) return
+        const data = JSON.parse(raw) as { openings?: Opening[] }
+        if (Array.isArray(data.openings)) setOpenings(data.openings)
+      } catch {
+        // ignore
+      }
+    }
+    window.addEventListener('projectDataChanged', handler)
+    return () => window.removeEventListener('projectDataChanged', handler)
+  }, [])
 
   const results = useMemo(() => {
     if (dims.width === 0 || dims.length === 0 || dims.height === 0) return null
@@ -190,16 +436,16 @@ export default function Walls4Calculator({ mode, projectId, initialProject }: Pr
     const trimmedName = name.trim()
     const isAndroid = Capacitor.isNativePlatform()
     
-    // Проверяем веб-проекты
+    // Проверяем веб-проекты (дубликат = то же имя и тот же тип: 4 стены)
     const webProjects = listLocalProjects().filter(p => p.platform !== 'android')
-    const webDuplicate = webProjects.find(p => p.name.trim() === trimmedName && p.id !== excludeId)
+    const webDuplicate = webProjects.find(p => p.type === 'walls_4' && p.name.trim() === trimmedName && p.id !== excludeId)
     if (webDuplicate) return webDuplicate
     
     // Проверяем Android-проекты (если на Android)
     if (isAndroid) {
       try {
         const deviceProjects = await listDeviceProjects()
-        const deviceDuplicate = deviceProjects.find(p => p.name.trim() === trimmedName && p.id !== excludeId)
+        const deviceDuplicate = deviceProjects.find(p => p.type === 'walls_4' && p.name.trim() === trimmedName && p.id !== excludeId)
         if (deviceDuplicate) return deviceDuplicate
       } catch {
         // Игнорируем ошибки при чтении устройств
@@ -228,15 +474,35 @@ export default function Walls4Calculator({ mode, projectId, initialProject }: Pr
     const now = new Date().toISOString()
     const isAndroid = Capacitor.isNativePlatform()
     const platform = isAndroid ? 'android' as const : 'web' as const
-    
+
+    let openingsToSave = openings
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = sessionStorage.getItem('currentProjectData_walls_4')
+        if (raw) {
+          const parsed = JSON.parse(raw) as { openings?: Opening[] }
+          if (Array.isArray(parsed.openings)) openingsToSave = parsed.openings
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    const pdfExtras = getWalls4PdfExtrasFromStorage()
+
     const p: LocalProject = {
       id,
       name: trimmedName,
       type: 'walls_4',
       createdAt: overwriteModalProject?.createdAt || initialProject?.createdAt || now,
       updatedAt: now,
-      data: { principle, material, width: dims.width, length: dims.length, height: dims.height, thickness: dims.thickness, openings, note: note.trim() || undefined },
+      data: { principle, material, width: dims.width, length: dims.length, height: dims.height, thickness: dims.thickness, openings: openingsToSave, note: note.trim() || undefined },
       platform,
+      pdfComment: (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('pdfComment_walls_4') : null)?.trim() || initialProject?.pdfComment || undefined,
+      notes: (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('notes_walls_4') : null)?.trim() || initialProject?.notes || undefined,
+      ...(pdfExtras.foundation ? { foundation: pdfExtras.foundation } : {}),
+      ...(pdfExtras.roof ? { roof: pdfExtras.roof } : {}),
+      ...(Object.keys({ ...initialProject?.resultsOverrides, ...resultsOverrides, ...getFoundationRoofOverridesFromStorage('4') }).length > 0 ? { resultsOverrides: { ...initialProject?.resultsOverrides, ...resultsOverrides, ...getFoundationRoofOverridesFromStorage('4') } } : {}),
     }
     
     if (isAndroid) {
@@ -260,13 +526,14 @@ export default function Walls4Calculator({ mode, projectId, initialProject }: Pr
         dims.height !== (init?.height ?? 0) ||
         dims.thickness !== (init?.thickness ?? 0) ||
         JSON.stringify(openings) !== JSON.stringify(init?.openings ?? []) ||
-        (note.trim() || '') !== (init?.note ?? '')
+        (note.trim() || '') !== (init?.note ?? '') ||
+        JSON.stringify(resultsOverrides) !== JSON.stringify(initialProject?.resultsOverrides ?? {})
       
       if (hasChanges && isProjectSaved) {
         setIsProjectSaved(false)
       }
     }
-  }, [projectName, material, principle, dims.width, dims.length, dims.height, dims.thickness, openings, note, hasRequired, initialProject, init, isProjectSaved])
+  }, [projectName, material, principle, dims.width, dims.length, dims.height, dims.thickness, openings, note, resultsOverrides, hasRequired, initialProject, init, isProjectSaved])
 
   // Перехватываем попытку закрыть страницу/покинуть проект
   useEffect(() => {
@@ -287,18 +554,41 @@ export default function Walls4Calculator({ mode, projectId, initialProject }: Pr
   const makePdf = async () => {
     if (!hasRequired || !results) throw new Error('Введите параметры стен')
     
-    // Используем клиентскую генерацию PDF для работы в статическом экспорте и на Android
-    const { generatePdfClient } = await import('@/lib/pdf/generatePdfClient')
-    return await generatePdfClient({
+    const { generatePdfWithPlanCapture } = await import('@/app/components/PdfPlanCapture')
+    const pdfExtras = getWalls4PdfExtrasFromStorage()
+    let openingsForPdf = openings
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = sessionStorage.getItem('currentProjectData_walls_4')
+        if (raw) {
+          const parsed = JSON.parse(raw) as { openings?: Opening[] }
+          if (Array.isArray(parsed.openings)) openingsForPdf = parsed.openings
+        }
+      } catch {
+        // ignore
+      }
+    }
+    const comment = (typeof window !== 'undefined' ? sessionStorage.getItem('pdfComment_walls_4') : null)?.trim() || pdfComment.trim() || undefined
+    const payload = {
       title: projectName.trim() || 'Проект строительства',
       includeMeta: includePdfMeta,
       materialLabel,
       principleLabel: principle === 'inside' ? 'Внутри' : 'Снаружи',
       dims,
       results,
-      openings: openings.map((o) => ({ width: o.width, height: o.height })),
-      type: 'walls_4',
-    })
+      openings: openingsForPdf.map((o) => ({
+        width: o.width,
+        height: o.height,
+        ...(typeof o.offset === 'number' && Number.isFinite(o.offset) ? { offset: o.offset } : {}),
+        ...(o.wall != null ? { wall: o.wall } : {}),
+      })),
+      type: 'walls_4' as const,
+      ...(pdfExtras.foundation ? { foundation: pdfExtras.foundation } : {}),
+      ...(pdfExtras.roof ? { roof: pdfExtras.roof } : {}),
+      ...(Object.keys({ ...initialProject?.resultsOverrides, ...resultsOverrides, ...getFoundationRoofOverridesFromStorage('4') }).length > 0 ? { resultsOverrides: { ...initialProject?.resultsOverrides, ...resultsOverrides, ...getFoundationRoofOverridesFromStorage('4') } } : {}),
+      pdfComment: comment,
+    }
+    return await generatePdfWithPlanCapture('walls_4', payload)
   }
 
   const checkDuplicateAndSaveProject = async () => {
@@ -312,13 +602,14 @@ export default function Walls4Calculator({ mode, projectId, initialProject }: Pr
       return
     }
     
-    // Нет дубликатов - сохраняем только проект (без PDF) напрямую
+    // Нет дубликатов - сохраняем проект и PDF (сохранение проекта = сохранение PDF)
     const savedProject = await persistProject(false, undefined)
     if (savedProject) {
-      setCurrentProjectId(savedProject.id) // Обновляем ID сохранённого проекта
+      setCurrentProjectId(savedProject.id)
       setIsProjectSaved(true)
       setToast('Проект сохранён')
       setTimeout(() => setToast(null), 2000)
+      await savePdfOnly()
     } else {
       setToast('Ошибка: не удалось сохранить проект')
       setTimeout(() => setToast(null), 3000)
@@ -330,12 +621,13 @@ export default function Walls4Calculator({ mode, projectId, initialProject }: Pr
       if (forceOverwrite) {
         const savedProject = await persistProject(forceOverwrite, overwriteId)
         if (savedProject) {
-          setCurrentProjectId(savedProject.id) // Обновляем ID сохранённого проекта
+          setCurrentProjectId(savedProject.id)
           setOverwriteModalProject(null)
           setPendingSave(false)
           setIsProjectSaved(true)
           setToast('Проект сохранён')
           setTimeout(() => setToast(null), 2000)
+          await savePdfOnly()
         } else {
           setToast('Ошибка: не удалось сохранить проект')
           setTimeout(() => setToast(null), 3000)
@@ -343,9 +635,9 @@ export default function Walls4Calculator({ mode, projectId, initialProject }: Pr
       } else {
         await checkDuplicateAndSaveProject()
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Ошибка при сохранении проекта:', error)
-      const errorMessage = error?.message || 'Ошибка сохранения проекта'
+      const errorMessage = error instanceof Error ? error.message : 'Ошибка сохранения проекта'
       setToast(errorMessage)
       setTimeout(() => setToast(null), 3000)
     }
@@ -353,49 +645,60 @@ export default function Walls4Calculator({ mode, projectId, initialProject }: Pr
 
   const savePdfOnly = async () => {
     try {
-      // PDF сохраняется независимо от сохранения проекта
       const bytes = await makePdf()
       const stamp = new Date().toISOString().replace(/[:.]/g, '-')
       const filename = `${projectName.trim() || 'Проект_строительства'}_${stamp}.pdf`
-      
       const { savePdfToDevice } = await import('@/lib/pdf/pdfStorage')
       const result = await savePdfToDevice(filename, bytes)
-      
       if (result) {
-        // Обрабатываем как объект { uri, path } или как строку (для обратной совместимости)
         const uri = typeof result === 'string' ? result : result.uri
-        
-        // Освобождаем предыдущий URL, если он был (для веб-версии)
+        const filePath = typeof result === 'string' ? undefined : result.path
         if (savedPdfUri && savedPdfUri.startsWith('blob:')) {
           URL.revokeObjectURL(savedPdfUri)
         }
         setSavedPdfUri(uri)
         setToast('PDF сохранён')
         setTimeout(() => setToast(null), 1500)
+        let binary = ''
+        for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i])
+        const base64 = btoa(binary)
+        sessionStorage.setItem('pdfViewerUri', uri)
+        sessionStorage.setItem('pdfViewerFilename', filename)
+        if (filePath) sessionStorage.setItem('pdfViewerFilePath', filePath)
+        sessionStorage.setItem('pdfViewerPdfBytes', base64)
+        sessionStorage.setItem('pdfViewerPdfData', JSON.stringify({
+          projectName: projectName.trim() || 'Проект строительства',
+          projectType: 'walls_4',
+          materialLabel: materialItems.find(m => m.value === material)?.label || 'Не выбран',
+          principleLabel: principle === 'inside' ? 'Внутри' : 'Снаружи',
+        }))
       } else {
         throw new Error('Не удалось сохранить PDF')
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Ошибка при сохранении PDF:', error)
-      const errorMessage = error?.message || 'Ошибка сохранения PDF. Проверьте разрешения приложения на доступ к файлам.'
-      setToast(errorMessage)
+      setToast(error instanceof Error ? error.message : 'Ошибка сохранения PDF. Проверьте разрешения приложения на доступ к файлам.')
       setTimeout(() => setToast(null), 3000)
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- резерв для кнопки в UI
+  const openSavedPdf = () => {
+    if (!savedPdfUri) return
+    const filename = sessionStorage.getItem('pdfViewerFilename') || `${projectName.trim() || 'Проект'}.pdf`
+    router.push(`/pdf-viewer?uri=${encodeURIComponent(savedPdfUri)}&filename=${encodeURIComponent(filename)}`)
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- резерв для кнопки в UI
   const downloadPdf = async () => {
-    console.log('[downloadPdf] Вызван: сохраняем проект и PDF')
     try {
-      // Всегда сохраняем проект перед сохранением PDF
-      console.log('[downloadPdf] Сохраняем проект перед сохранением PDF')
       await runUserInitiatedSave(async () => saveProjectOnly())
-      
-      // Затем сохраняем PDF
+      await new Promise(resolve => setTimeout(resolve, 50))
+      if (overwriteModalProject) return
       await savePdfOnly()
-      console.log('[downloadPdf] PDF и проект сохранены успешно')
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('[downloadPdf] Ошибка при сохранении:', error)
-      setToast(error?.message || 'Ошибка при сохранении проекта или PDF')
+      setToast(error instanceof Error ? error.message : 'Ошибка при сохранении проекта или PDF')
       setTimeout(() => setToast(null), 3000)
     }
   }
@@ -411,53 +714,6 @@ export default function Walls4Calculator({ mode, projectId, initialProject }: Pr
     setPendingSave(false)
   }
 
-  const handleBackClick = (e: React.MouseEvent) => {
-    const href = mode === 'edit' ? '/dashboard' : '/projects/create'
-    // Показываем окно только если:
-    // 1. PDF не сохранён (значит проект тоже не сохранён через PDF)
-    // 2. И проект не сохранён отдельно
-    // Если PDF сохранён, значит проект уже сохранён, окно не показываем
-    if (!savedPdfUri && !isProjectSaved && hasRequired) {
-      e.preventDefault()
-      setShowSaveBeforeExitModal(true)
-      setPendingExit(() => () => router.push(href))
-      return
-    }
-    router.push(href)
-  }
-
-  const handleSaveBeforeExit = async () => {
-    setShowSaveBeforeExitModal(false)
-    await runUserInitiatedSave(async () => saveProjectOnly())
-    if (pendingExit) {
-      pendingExit()
-      setPendingExit(null)
-    }
-  }
-
-  const handleExitWithoutSaving = () => {
-    setShowSaveBeforeExitModal(false)
-    // Удаляем проект только если он действительно не был сохранён
-    // Если проект был сохранён (через "Сохранить PDF" или "Сохранить проект"), не удаляем его
-    if (!isProjectSaved && !currentId) {
-      // Если это создание нового проекта и проект не был сохранён — удаляем черновик
-      const draftId = draftIdRef.current
-      if (draftId) {
-        try {
-          deleteLocalProject(draftId)
-        } catch {}
-        try {
-          void deleteDeviceProject(draftId)
-        } catch {}
-      }
-    }
-    // Если проект был сохранён (isProjectSaved === true или currentId существует), не удаляем его
-    if (pendingExit) {
-      pendingExit()
-      setPendingExit(null)
-    }
-  }
-
   // Очищаем URL при размонтировании компонента (только для веб-версии)
   useEffect(() => {
     return () => {
@@ -467,6 +723,7 @@ export default function Walls4Calculator({ mode, projectId, initialProject }: Pr
     }
   }, [savedPdfUri])
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- резерв для кнопки в UI
   const openPdf = async () => {
     try {
       if (!hasRequired || !results) {
@@ -498,43 +755,35 @@ export default function Walls4Calculator({ mode, projectId, initialProject }: Pr
         window.open(url, '_blank')
         setTimeout(() => URL.revokeObjectURL(url), 10000)
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Ошибка при открытии PDF:', error)
-      setToast(error?.message || 'Не удалось открыть PDF')
+      setToast(error instanceof Error ? error.message : 'Не удалось открыть PDF')
       setTimeout(() => setToast(null), 3000)
     }
   }
 
   return (
     <div className="flex min-h-screen flex-col bg-black font-sans text-white pt-safe">
-      <header className="border-b border-white/10">
-        <div className="mx-auto max-w-2xl px-4 py-4 sm:px-6">
-          <div className="flex items-center justify-between gap-4">
-            <button
-              type="button"
-              onClick={handleBackClick}
-              className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white hover:bg-white/15"
-            >
-              ← Назад
-            </button>
-            <h1 className="text-2xl font-bold">Параметры стен</h1>
-            <div className="w-[88px]" />
+      {!embedInView && (
+        <header className="border-b border-white/10">
+          <div className="mx-auto max-w-2xl px-4 py-4 sm:px-6">
+            <div className="flex items-center justify-between gap-4">
+              <Link
+                href={mode === 'edit' ? '/project' : '/projects/create/walls-4'}
+                className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white hover:bg-white/15"
+              >
+                <ArrowLeft className="h-5 w-5" aria-label="Назад" />
+              </Link>
+              <h1 className="text-2xl font-bold">Параметры стен</h1>
+              <div className="w-9" />
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
+      )}
 
       <main className="mx-auto w-full max-w-2xl flex-1 px-4 pt-2 pb-10 sm:px-6">
         <div className="mt-1 rounded-2xl border border-white/10 bg-white/5 p-6">
           <div className="space-y-5">
-            <div>
-              <input
-                value={projectName}
-                onChange={(e) => setProjectName(e.target.value)}
-                className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white placeholder:text-zinc-500"
-                placeholder="Название проекта"
-              />
-            </div>
-
             <div>
               <button
                 type="button"
@@ -578,7 +827,17 @@ export default function Walls4Calculator({ mode, projectId, initialProject }: Pr
 
         {/* mini visualization (same style as others) */}
         <div className="mt-3 overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-6">
-          <div className="flex items-center justify-center">
+          <div className="relative flex items-center justify-center">
+            {onSchemaClick && (
+              <button
+                type="button"
+                onClick={onSchemaClick}
+                aria-label="Открыть план в масштабе"
+                className="absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-lg bg-white/20 text-white hover:bg-white/30"
+              >
+                <Maximize2 className="h-4 w-4" />
+              </button>
+            )}
             <svg viewBox="0 0 200 120" className="h-28 w-full max-w-md select-none rounded-xl border border-white/10 bg-black/40">
               <rect width="200" height="120" fill="transparent" />
               {(() => {
@@ -727,7 +986,7 @@ export default function Walls4Calculator({ mode, projectId, initialProject }: Pr
             <div className="grid grid-cols-2 gap-3">
               <input
                 type="text"
-                inputMode="text"
+                inputMode="decimal"
                 className="rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white placeholder:text-zinc-500"
                 placeholder="Ширина (м)"
                 value={widthText}
@@ -745,7 +1004,7 @@ export default function Walls4Calculator({ mode, projectId, initialProject }: Pr
               />
               <input
                 type="text"
-                inputMode="text"
+                inputMode="decimal"
                 className="rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white placeholder:text-zinc-500"
                 placeholder="Длина (м)"
                 value={lengthText}
@@ -763,7 +1022,7 @@ export default function Walls4Calculator({ mode, projectId, initialProject }: Pr
               />
               <input
                 type="text"
-                inputMode="text"
+                inputMode="decimal"
                 className="rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white placeholder:text-zinc-500"
                 placeholder="Высота (м)"
                 value={heightText}
@@ -779,7 +1038,7 @@ export default function Walls4Calculator({ mode, projectId, initialProject }: Pr
               />
               <input
                 type="text"
-                inputMode="text"
+                inputMode="decimal"
                 className="rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white placeholder:text-zinc-500"
                 placeholder="Толщина (м)"
                 value={thicknessText}
@@ -804,7 +1063,11 @@ export default function Walls4Calculator({ mode, projectId, initialProject }: Pr
                 <button
                   key={idx}
                   type="button"
-                  onClick={() => setOpenings((arr) => arr.filter((_, i) => i !== idx))}
+                  onClick={() => {
+                    const next = openings.filter((_, i) => i !== idx)
+                    setOpenings(next)
+                    onOpeningsChange?.(next)
+                  }}
                   className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-sm text-zinc-200 hover:bg-white/10"
                 >
                   ({formatRu(o.width)}х{formatRu(o.height)})
@@ -820,7 +1083,7 @@ export default function Walls4Calculator({ mode, projectId, initialProject }: Pr
               <div className="mt-3 grid grid-cols-2 gap-3">
                 <input
                   type="text"
-                  inputMode="text"
+                  inputMode="decimal"
                   className="rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-white placeholder:text-zinc-500"
                   placeholder="Ширина (м)"
                   value={openingWidthText}
@@ -828,7 +1091,7 @@ export default function Walls4Calculator({ mode, projectId, initialProject }: Pr
                 />
                 <input
                   type="text"
-                  inputMode="text"
+                  inputMode="decimal"
                   className="rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-white placeholder:text-zinc-500"
                   placeholder="Высота (м)"
                   value={openingHeightText}
@@ -846,7 +1109,9 @@ export default function Walls4Calculator({ mode, projectId, initialProject }: Pr
                       setTimeout(() => setToast(null), 2000)
                       return
                     }
-                    setOpenings((arr) => [...arr, { width: w, height: h }])
+                    const nextOpenings = [...openings, { wall: 1 as const, width: w, height: h, offset: Math.max(0, thickness) }]
+                    setOpenings(nextOpenings)
+                    onOpeningsChange?.(nextOpenings)
                     setOpeningWidthText('')
                     setOpeningHeightText('')
                     setIsAddingOpening(false)
@@ -879,18 +1144,6 @@ export default function Walls4Calculator({ mode, projectId, initialProject }: Pr
           )}
         </div>
 
-        <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-6">
-          <textarea
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Примечание"
-            className="relative w-full min-h-[120px] rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white placeholder:text-zinc-500/30 placeholder:opacity-50 focus:border-white/20 focus:outline-none"
-            style={{
-              resize: 'vertical',
-            }}
-          />
-        </div>
-
         <div className="mt-3 rounded-2xl border border-blue-500/40 bg-gradient-to-b from-blue-500/10 to-transparent p-6">
           <h3 className="text-lg font-semibold text-white">Результат расчёта</h3>
           <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-4">
@@ -904,59 +1157,103 @@ export default function Walls4Calculator({ mode, projectId, initialProject }: Pr
               <p className="mt-4 text-sm text-zinc-400">{missingHint}</p>
             ) : (
               <div className="mt-4 grid gap-4">
-                <div className="rounded-xl border border-white/10 bg-white/5 p-5">
-                  <p className="text-sm text-zinc-400">Площадь</p>
-                  <p className="mt-1 text-4xl font-bold text-white">
-                    {results.area.toFixed(2)} <span className="text-2xl font-semibold">м²</span>
-                  </p>
-                </div>
-                <div className="rounded-xl border border-white/10 bg-white/5 p-5">
-                  <p className="text-sm text-zinc-400">Объём</p>
-                  <p className="mt-1 text-4xl font-bold text-white">
-                    {results.volume.toFixed(2)} <span className="text-2xl font-semibold">м³</span>
-                  </p>
-                </div>
+                {(() => {
+                  const effectiveArea = resultsOverrides.wallsArea ?? results.area
+                  const effectiveVolume = resultsOverrides.wallsVolume ?? results.volume
+                  const commitEdit = (key: 'wallsArea' | 'wallsVolume') => {
+                    const n = parseRuDecimal(editResultValue)
+                    if (n >= 0) setResultsOverrides((prev) => ({ ...prev, [key]: n }))
+                    else setResultsOverrides((prev) => ({ ...prev, [key]: undefined }))
+                    setEditingResult(null)
+                  }
+                  return (
+                    <>
+                      <div className="rounded-xl border border-white/10 bg-white/5 p-5">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm text-zinc-400">Площадь</p>
+                          {resultsOverrides.wallsArea != null && (
+                            <button
+                              type="button"
+                              onClick={() => { setResultsOverrides((p) => ({ ...p, wallsArea: undefined })) }}
+                              className="text-xs text-blue-400 hover:text-blue-300"
+                            >
+                              Сбросить к расчёту
+                            </button>
+                          )}
+                        </div>
+                        {editingResult === 'wallsArea' ? (
+                          <div className="mt-1 flex items-center gap-2">
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={editResultValue}
+                              onChange={(e) => setEditResultValue(sanitizeRuDecimalInput(e.target.value))}
+                              onBlur={() => commitEdit('wallsArea')}
+                              onKeyDown={(e) => { if (e.key === 'Enter') commitEdit('wallsArea') }}
+                              className="w-32 rounded-lg border border-white/20 bg-black/30 px-3 py-2 text-2xl font-bold text-white"
+                              autoFocus
+                            />
+                            <span className="text-2xl font-semibold text-white">м²</span>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => { setEditingResult('wallsArea'); setEditResultValue(effectiveArea.toFixed(2).replace('.', ',')) }}
+                            className="mt-1 flex items-center gap-2 text-left"
+                          >
+                            <p className="text-4xl font-bold text-white">
+                              {effectiveArea.toFixed(2).replace('.', ',')} <span className="text-2xl font-semibold">м²</span>
+                            </p>
+                            <Pencil className="h-4 w-4 shrink-0 text-zinc-400 hover:text-white" />
+                          </button>
+                        )}
+                      </div>
+                      <div className="rounded-xl border border-white/10 bg-white/5 p-5">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm text-zinc-400">Объём</p>
+                          {resultsOverrides.wallsVolume != null && (
+                            <button
+                              type="button"
+                              onClick={() => { setResultsOverrides((p) => ({ ...p, wallsVolume: undefined })) }}
+                              className="text-xs text-blue-400 hover:text-blue-300"
+                            >
+                              Сбросить к расчёту
+                            </button>
+                          )}
+                        </div>
+                        {editingResult === 'wallsVolume' ? (
+                          <div className="mt-1 flex items-center gap-2">
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={editResultValue}
+                              onChange={(e) => setEditResultValue(sanitizeRuDecimalInput(e.target.value))}
+                              onBlur={() => commitEdit('wallsVolume')}
+                              onKeyDown={(e) => { if (e.key === 'Enter') commitEdit('wallsVolume') }}
+                              className="w-32 rounded-lg border border-white/20 bg-black/30 px-3 py-2 text-2xl font-bold text-white"
+                              autoFocus
+                            />
+                            <span className="text-2xl font-semibold text-white">м³</span>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => { setEditingResult('wallsVolume'); setEditResultValue(effectiveVolume.toFixed(2).replace('.', ',')) }}
+                            className="mt-1 flex items-center gap-2 text-left"
+                          >
+                            <p className="text-4xl font-bold text-white">
+                              {effectiveVolume.toFixed(2).replace('.', ',')} <span className="text-2xl font-semibold">м³</span>
+                            </p>
+                            <Pencil className="h-4 w-4 shrink-0 text-zinc-400 hover:text-white" />
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )
+                })()}
               </div>
             )}
           </div>
-        </div>
-
-        <div className="mt-3 grid grid-cols-2 gap-4">
-          <label className="col-span-2 flex items-center gap-3 text-sm text-zinc-200">
-            <input
-              type="checkbox"
-              className="h-4 w-4 accent-blue-500"
-              checked={includePdfMeta}
-              onChange={(e) => setIncludePdfMeta(e.target.checked)}
-            />
-            Добавить в PDF пользователя и почту
-          </label>
-          <button
-            type="button"
-            disabled={!hasRequired || !results}
-            onClick={() => {
-              if (savedPdfUri) {
-                // Если PDF уже сохранён - открываем PDF
-                openPdf().catch((e) => {
-                  setToast(e?.message ?? 'Не удалось открыть PDF')
-                  setTimeout(() => setToast(null), 2500)
-                })
-              } else {
-                // Если PDF не сохранён - сохраняем PDF
-                downloadPdf().catch((e) => {
-                  setToast(e?.message ?? 'Не удалось сохранить PDF')
-                  setTimeout(() => setToast(null), 2500)
-                })
-              }
-            }}
-            className="inline-flex items-center justify-center gap-3 rounded-2xl bg-blue-600 px-5 py-4 text-base font-semibold text-white disabled:opacity-50"
-          >
-            <Download className="h-5 w-5" />
-            {savedPdfUri ? 'Открыть PDF' : 'Сохранить в PDF'}
-          </button>
-          {(!hasRequired || !results) && (
-            <p className="col-span-2 text-sm text-zinc-400">{missingHint}</p>
-          )}
         </div>
       </main>
 
@@ -1037,40 +1334,6 @@ export default function Walls4Calculator({ mode, projectId, initialProject }: Pr
         </div>
       )}
 
-      {showSaveBeforeExitModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <button
-            type="button"
-            aria-label="Close"
-            className="absolute inset-0 bg-black/60"
-            onClick={() => setShowSaveBeforeExitModal(false)}
-          />
-          <div className="relative z-10 mx-4 w-full max-w-md rounded-2xl border border-white/10 bg-zinc-900 p-6 shadow-xl">
-            <h2 className="mb-4 text-xl font-semibold text-white">
-              Сохранить проект?
-            </h2>
-            <p className="mb-6 text-base text-zinc-300">
-              У вас есть несохранённые изменения. Хотите сохранить проект перед выходом?
-            </p>
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={handleExitWithoutSaving}
-                className="flex-1 rounded-xl border border-white/20 bg-black/40 px-4 py-3 text-base font-semibold text-white hover:bg-black/60"
-              >
-                Выйти без сохранения
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveBeforeExit}
-                className="flex-1 rounded-xl bg-blue-600 px-4 py-3 text-base font-semibold text-white hover:bg-blue-700"
-              >
-                Сохранить и выйти
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

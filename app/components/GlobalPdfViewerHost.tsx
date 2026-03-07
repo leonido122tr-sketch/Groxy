@@ -21,7 +21,7 @@ export function GlobalPdfViewerHost() {
   const [payload, setPayload] = useState<PdfViewerPayload | null>(null)
 
   useEffect(() => {
-    const handle = async (event: any) => {
+    const handle = async (event: CustomEvent) => {
       const detail = event?.detail || {}
       const next: PdfViewerPayload = {
         filename: String(detail.filename || 'document.pdf'),
@@ -37,91 +37,124 @@ export function GlobalPdfViewerHost() {
         platform: Capacitor.getPlatform(),
       })
 
-      // На Android используем FileOpener вместо PdfViewer
-      if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
-        try {
-          // Если есть URI сохранённого PDF, используем его
-          if (next.uri) {
-            console.log('GlobalPdfViewerHost: открытие PDF через FileOpener на Android, URI:', next.uri)
-            const { FileOpener } = await import('@capawesome-team/capacitor-file-opener')
-            await FileOpener.openFile({
-              path: next.uri,
-              mimeType: 'application/pdf',
-            })
-            console.log('GlobalPdfViewerHost: FileOpener.openFile успешно вызван')
-            // Не показываем PdfViewer на Android
-            return
-          }
-          
-          // Если есть pdfData (bytes), сохраняем и открываем
-          if (next.pdfData && next.pdfData instanceof Uint8Array) {
-            console.log('GlobalPdfViewerHost: сохранение PDF перед открытием через FileOpener')
-            const { savePdfToDevice, openPdfFromDevice } = await import('@/lib/pdf/pdfStorage')
-            const result = await savePdfToDevice(next.filename, next.pdfData)
-            if (result) {
-              const uri = typeof result === 'string' ? result : result.uri
-              const filePath = typeof result === 'string' ? undefined : result.path
-              await openPdfFromDevice(uri, next.pdfData, { userInitiated: true, filePath })
-              // Не показываем PdfViewer на Android
-              return
-            }
-          }
-          
-          // Если есть только pdfUrl (blob URL) - это старый способ, который не должен использоваться на Android
-          // Пытаемся прочитать blob и сохранить
-          if (next.pdfUrl && !next.uri && !next.pdfData) {
-            console.log('GlobalPdfViewerHost: получен blob URL на Android, пытаемся прочитать и сохранить')
-            try {
-              const response = await fetch(next.pdfUrl)
-              const blob = await response.blob()
-              const arrayBuffer = await blob.arrayBuffer()
-              const bytes = new Uint8Array(arrayBuffer)
-              
-              const { savePdfToDevice, openPdfFromDevice } = await import('@/lib/pdf/pdfStorage')
-              const result = await savePdfToDevice(next.filename, bytes)
-              if (result) {
-                const uri = typeof result === 'string' ? result : result.uri
-                const filePath = typeof result === 'string' ? undefined : result.path
-                await openPdfFromDevice(uri, bytes, { userInitiated: true, filePath })
-                // Очищаем blob URL
-                URL.revokeObjectURL(next.pdfUrl)
-                return
-              }
-            } catch (fetchError) {
-              console.error('GlobalPdfViewerHost: ошибка чтения blob URL:', fetchError)
-            }
-          }
-          
-          // Если ничего не сработало, просто игнорируем (не показываем PdfViewer на Android)
-          console.warn('GlobalPdfViewerHost: на Android получено событие openPdfViewer без URI или pdfData, игнорируем')
-          return
-        } catch (error: any) {
-          console.error('GlobalPdfViewerHost: ошибка открытия PDF через FileOpener:', error)
-          // В случае ошибки не показываем PdfViewer (он не работает на Android)
-          alert('Не удалось открыть PDF. Убедитесь, что у вас установлено приложение для просмотра PDF.')
-          return
-        }
-      }
-
-      // Для веб-версии и iOS показываем PdfViewer
       setPayload(next)
     }
 
-    window.addEventListener('openPdfViewer', handle as EventListener)
+    const listener: EventListener = (evt) => void handle(evt as CustomEvent)
+    window.addEventListener('openPdfViewer', listener)
 
     // Если событие прилетело до того, как React успел смонтироваться
     if (window.__GROXY_LAST_PDF_VIEWER__) {
-      void handle({ detail: window.__GROXY_LAST_PDF_VIEWER__ })
+      void handle({ detail: window.__GROXY_LAST_PDF_VIEWER__ } as CustomEvent)
     }
 
     return () => {
-      window.removeEventListener('openPdfViewer', handle as EventListener)
+      window.removeEventListener('openPdfViewer', listener)
     }
   }, [])
 
-  // На Android не показываем PdfViewer (используем FileOpener)
-  if (!payload || (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android')) {
+  if (!payload) {
     return null
+  }
+
+  const handleShare = async () => {
+    try {
+      if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
+        const { Share } = await import('@capacitor/share')
+        const { savePdfToDevice } = await import('@/lib/pdf/pdfStorage')
+        const shareFilename = payload.filename.endsWith('.pdf') ? payload.filename : `${payload.filename}.pdf`
+
+        if (payload.pdfData) {
+          let bytes: Uint8Array
+          if (typeof payload.pdfData === 'string') {
+            const binary = atob(payload.pdfData)
+            bytes = new Uint8Array(binary.length)
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+          } else {
+            bytes = payload.pdfData
+          }
+          const nameForShare = `share_${Date.now()}_${shareFilename}`
+          const result = await savePdfToDevice(nameForShare, bytes)
+          const shareUrl = result ? (typeof result === 'string' ? result : (result.path ? `file://${result.path}` : result.uri)) : null
+          if (shareUrl && (shareUrl.startsWith('file://') || shareUrl.startsWith('http'))) {
+            await Share.share({
+              title: payload.filename,
+              url: shareUrl,
+              dialogTitle: 'Поделиться PDF',
+            })
+            return
+          }
+        }
+        alert('Не удалось подготовить файл для шаринга')
+        return
+      }
+
+      if (Capacitor.isNativePlatform()) {
+        const { Share } = await import('@capacitor/share')
+        const { Filesystem, Directory } = await import('@capacitor/filesystem')
+        const shareFilename = payload.filename.endsWith('.pdf') ? payload.filename : `${payload.filename}.pdf`
+        if (payload.pdfData) {
+          let base64Data: string
+          if (typeof payload.pdfData === 'string') {
+            base64Data = payload.pdfData
+          } else {
+            let binary = ''
+            for (let i = 0; i < payload.pdfData.byteLength; i++) {
+              binary += String.fromCharCode(payload.pdfData[i])
+            }
+            base64Data = btoa(binary)
+          }
+          const cachePath = `Groxy/share/${shareFilename}`
+          await Filesystem.writeFile({
+            path: cachePath,
+            data: base64Data,
+            directory: Directory.Cache,
+          })
+          const fileUri = await Filesystem.getUri({
+            path: cachePath,
+            directory: Directory.Cache,
+          })
+          await Share.share({
+            title: payload.filename,
+            url: fileUri.uri,
+            dialogTitle: 'Поделиться PDF',
+          })
+          return
+        }
+        if (payload.pdfUrl && payload.pdfUrl.startsWith('file://')) {
+          await Share.share({
+            title: payload.filename,
+            url: payload.pdfUrl,
+            dialogTitle: 'Поделиться PDF',
+          })
+          return
+        }
+        alert('Не удалось подготовить файл для шаринга')
+        return
+      }
+      if (typeof navigator !== 'undefined' && 'share' in navigator) {
+        const nav = navigator as Navigator & { share: (data: ShareData) => Promise<void> }
+        if (payload.pdfData) {
+          let bytes: Uint8Array
+          if (typeof payload.pdfData === 'string') {
+            const binary = atob(payload.pdfData)
+            bytes = new Uint8Array(binary.length)
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+          } else {
+            bytes = payload.pdfData
+          }
+          const file = new File([bytes.buffer as ArrayBuffer], payload.filename, { type: 'application/pdf' })
+          await nav.share({ title: payload.filename, files: [file] })
+          return
+        }
+        if (payload.pdfUrl) {
+          await nav.share({ title: payload.filename, url: payload.pdfUrl })
+          return
+        }
+      }
+    } catch (e) {
+      console.error('GlobalPdfViewerHost: share error', e)
+    }
   }
 
   return (
@@ -130,6 +163,7 @@ export function GlobalPdfViewerHost() {
       pdfUrl={payload.pdfUrl}
       pdfData={payload.pdfData}
       onClose={() => setPayload(null)}
+      onShare={handleShare}
     />
   )
 }

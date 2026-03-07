@@ -5,12 +5,12 @@ import Link from 'next/link'
 import { ArrowLeft, ChevronDown, Maximize2 } from 'lucide-react'
 import { useDirty } from '../../buildings-2/DirtyContext'
 import { EditableResultBlock } from '@/app/components/EditableResultBlock'
+import { DetailPlanRoofWalls4 } from '@/app/components/DetailPlanRoofWalls4'
 import { setRoofOverridesInStorage } from '@/lib/projects/resultOverridesStorage'
 
 export type RoofType = 'single' | 'gable' | 'hip' | 'mansard'
 
 const ROOF_STORAGE_KEY = 'currentProjectData_roof_4'
-const ROOF_OVERRIDE_KEY = 'resultsOverride_roof_4'
 
 const ROOF_OPTIONS: { id: RoofType; label: string }[] = [
   { id: 'single', label: 'Односкатная крыша' },
@@ -68,16 +68,26 @@ function recommendedHeightGable(width: number): number | null {
 
 const RECOMMENDED_OVERHANG = 0.4
 
+type RoofOverrides = { roofArea?: number; roofRaftersVolume?: number; roofPurlinVolume?: number; roofBattenVolume?: number }
+
 type RoofPageProps = {
   embedInView?: boolean
   /** При клике на визуализацию открыть детальный план (только при embedInView) */
   onSchemaClick?: () => void
+  /** Сохранённый проект (при просмотре) — переопределения инициализируются из него, как у фундамента и стен */
+  initialProject?: { resultsOverrides?: RoofOverrides }
 }
 
-export default function RoofPage({ embedInView, onSchemaClick }: RoofPageProps = {}) {
+function RoofPageContent({ embedInView, onSchemaClick, initialProject }: RoofPageProps = {}) {
   const { markDirty } = useDirty()
   const [selectedType, setSelectedType] = useState<RoofType | null>(null)
-  const [roofAreaOverride, setRoofAreaOverride] = useState<number | undefined>(undefined)
+  const ro = initialProject?.resultsOverrides
+  const [roofOverrides, setRoofOverrides] = useState<RoofOverrides>(() => ({
+    roofArea: ro?.roofArea,
+    roofRaftersVolume: ro?.roofRaftersVolume,
+    roofPurlinVolume: ro?.roofPurlinVolume,
+    roofBattenVolume: ro?.roofBattenVolume,
+  }))
   const [isOpen, setIsOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const hasMountedRef = useRef(false)
@@ -114,14 +124,27 @@ export default function RoofPage({ embedInView, onSchemaClick }: RoofPageProps =
     } catch {
       // ignore
     }
-    const overrideRaw = sessionStorage.getItem(ROOF_OVERRIDE_KEY)
-    if (overrideRaw !== null && overrideRaw !== '') {
-      const v = Number.parseFloat(overrideRaw)
-      if (Number.isFinite(v) && v >= 0) {
-        queueMicrotask(() => setRoofAreaOverride(v))
-      }
-    }
   }, [])
+
+  // Как у фундамента и стен: пишем в storage при изменении overrides, помечаем dirty при расхождении с initial
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    setRoofOverridesInStorage('4', roofOverrides)
+    const initial = initialProject?.resultsOverrides ?? {}
+    const overridesChanged =
+      JSON.stringify(roofOverrides) !==
+      JSON.stringify({
+        roofArea: initial.roofArea,
+        roofRaftersVolume: initial.roofRaftersVolume,
+        roofPurlinVolume: initial.roofPurlinVolume,
+        roofBattenVolume: initial.roofBattenVolume,
+      })
+    if (overridesChanged) {
+      sessionStorage.setItem('projectIsDirty', 'true')
+      markDirty()
+      window.dispatchEvent(new CustomEvent('projectDataChanged'))
+    }
+  }, [roofOverrides, initialProject?.resultsOverrides])
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -254,7 +277,7 @@ export default function RoofPage({ embedInView, onSchemaClick }: RoofPageProps =
     <div className="flex min-h-screen flex-col bg-black font-sans text-white pt-safe">
       {!embedInView && (
         <header className="border-b border-white/10">
-          <div className="mx-auto max-w-5xl px-4 py-4 sm:px-6 lg:px-8">
+          <div className="mx-auto max-w-2xl px-4 py-4 sm:px-6">
             <div className="flex items-center justify-between gap-4">
               <Link
                 href="/projects/create/walls-4"
@@ -263,14 +286,14 @@ export default function RoofPage({ embedInView, onSchemaClick }: RoofPageProps =
                 <ArrowLeft className="h-5 w-5" aria-label="Назад" />
               </Link>
               <h1 className="text-2xl font-bold">Крыша</h1>
-              <div className="w-[88px]" />
+              <div className="w-9" />
             </div>
           </div>
         </header>
       )}
 
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-10 sm:px-6 lg:px-8">
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
+      <main className="mx-auto w-full max-w-2xl flex-1 px-4 pt-2 pb-10 sm:px-6">
+        <div className="mt-1 rounded-2xl border border-white/10 bg-white/5 p-6">
           <div className="space-y-5">
             <div className="relative" ref={containerRef}>
               <label className="mb-2 block text-sm font-medium text-zinc-200">Тип крыши</label>
@@ -347,7 +370,7 @@ export default function RoofPage({ embedInView, onSchemaClick }: RoofPageProps =
           </div>
 
           <div className="relative mt-5 overflow-hidden rounded-xl border border-white/10 bg-black/40">
-            {embedInView && onSchemaClick && (
+            {onSchemaClick && (
               <button
                 type="button"
                 onClick={onSchemaClick}
@@ -474,34 +497,36 @@ export default function RoofPage({ embedInView, onSchemaClick }: RoofPageProps =
             <EditableResultBlock
               label="Площадь крыши"
               calculatedValue={roofArea}
-              overrideValue={roofAreaOverride}
+              overrideValue={roofOverrides.roofArea}
               unit="м²"
-              onOverride={(v: number | undefined) => {
-                setRoofAreaOverride(v)
-                if (typeof window !== 'undefined') {
-                  setRoofOverridesInStorage('4', { roofArea: v })
-                  sessionStorage.setItem('projectIsDirty', 'true')
-                  markDirty()
-                  window.dispatchEvent(new CustomEvent('projectDataChanged'))
-                }
-              }}
+              onOverride={(v: number | undefined) => setRoofOverrides((prev) => ({ ...prev, roofArea: v }))}
             />
           </div>
 
           {roofArea > 0 && (
-            <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-5">
-              <p className="mb-3 text-sm font-medium text-zinc-200">Пиломатериалы (без запаса)</p>
-              <ul className="space-y-2 text-sm text-white">
-                <li>
-                  Стропила: {formatRu1(Math.round(rafterVolume * 100) / 100)} м³ (50×150 мм)
-                </li>
-                <li>
-                  Прогоны: {formatRu1(Math.round(purlinVolume * 100) / 100)} м³ (40×100 мм)
-                </li>
-                <li>
-                  Обрешётка: {formatRu1(Math.round(battenVolume * 100) / 100)} м³ (25×100 мм)
-                </li>
-              </ul>
+            <div className="mt-4 space-y-3 rounded-xl border border-white/10 bg-white/5 p-5">
+              <p className="mb-2 text-sm font-medium text-zinc-200">Пиломатериалы (без запаса)</p>
+              <EditableResultBlock
+                label="Стропила (50×150 мм)"
+                calculatedValue={Math.round(rafterVolume * 100) / 100}
+                overrideValue={roofOverrides.roofRaftersVolume}
+                unit="м³"
+                onOverride={(v: number | undefined) => setRoofOverrides((prev) => ({ ...prev, roofRaftersVolume: v }))}
+              />
+              <EditableResultBlock
+                label="Прогоны (40×100 мм)"
+                calculatedValue={Math.round(purlinVolume * 100) / 100}
+                overrideValue={roofOverrides.roofPurlinVolume}
+                unit="м³"
+                onOverride={(v: number | undefined) => setRoofOverrides((prev) => ({ ...prev, roofPurlinVolume: v }))}
+              />
+              <EditableResultBlock
+                label="Обрешётка (25×100 мм)"
+                calculatedValue={Math.round(battenVolume * 100) / 100}
+                overrideValue={roofOverrides.roofBattenVolume}
+                unit="м³"
+                onOverride={(v: number | undefined) => setRoofOverrides((prev) => ({ ...prev, roofBattenVolume: v }))}
+              />
               <p className="mt-2 text-xs text-zinc-500">Шаг стропил 0,6 м, обрешётка 0,4 м.</p>
             </div>
           )}
@@ -574,7 +599,7 @@ export default function RoofPage({ embedInView, onSchemaClick }: RoofPageProps =
               </div>
 
               <div className="relative mt-5 overflow-hidden rounded-xl border border-white/10 bg-black/40">
-                {embedInView && onSchemaClick && (
+                {onSchemaClick && (
                   <button
                     type="button"
                     onClick={onSchemaClick}
@@ -722,34 +747,36 @@ export default function RoofPage({ embedInView, onSchemaClick }: RoofPageProps =
                 <EditableResultBlock
                   label="Площадь крыши"
                   calculatedValue={roofAreaGable}
-                  overrideValue={roofAreaOverride}
+                  overrideValue={roofOverrides.roofArea}
                   unit="м²"
-                  onOverride={(v: number | undefined) => {
-                    setRoofAreaOverride(v)
-                    if (typeof window !== 'undefined') {
-                      setRoofOverridesInStorage('4', { roofArea: v })
-                      sessionStorage.setItem('projectIsDirty', 'true')
-                      markDirty()
-                      window.dispatchEvent(new CustomEvent('projectDataChanged'))
-                    }
-                  }}
+                  onOverride={(v: number | undefined) => setRoofOverrides((prev) => ({ ...prev, roofArea: v }))}
                 />
               </div>
 
               {roofAreaGable > 0 && (
-                <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-5">
-                  <p className="mb-3 text-sm font-medium text-zinc-200">Пиломатериалы (без запаса)</p>
-                  <ul className="space-y-2 text-sm text-white">
-                    <li>
-                      Стропила: {formatRu1(Math.round(rafterVolumeGable * 100) / 100)} м³ (50×150 мм)
-                    </li>
-                    <li>
-                      Прогоны: {formatRu1(Math.round(purlinVolumeGable * 100) / 100)} м³ (40×100 мм)
-                    </li>
-                    <li>
-                      Обрешётка: {formatRu1(Math.round(battenVolumeGable * 100) / 100)} м³ (25×100 мм)
-                    </li>
-                  </ul>
+                <div className="mt-4 space-y-3 rounded-xl border border-white/10 bg-white/5 p-5">
+                  <p className="mb-2 text-sm font-medium text-zinc-200">Пиломатериалы (без запаса)</p>
+                  <EditableResultBlock
+                    label="Стропила (50×150 мм)"
+                    calculatedValue={Math.round(rafterVolumeGable * 100) / 100}
+                    overrideValue={roofOverrides.roofRaftersVolume}
+                    unit="м³"
+                    onOverride={(v: number | undefined) => setRoofOverrides((prev) => ({ ...prev, roofRaftersVolume: v }))}
+                  />
+                  <EditableResultBlock
+                    label="Прогоны (40×100 мм)"
+                    calculatedValue={Math.round(purlinVolumeGable * 100) / 100}
+                    overrideValue={roofOverrides.roofPurlinVolume}
+                    unit="м³"
+                    onOverride={(v: number | undefined) => setRoofOverrides((prev) => ({ ...prev, roofPurlinVolume: v }))}
+                  />
+                  <EditableResultBlock
+                    label="Обрешётка (25×100 мм)"
+                    calculatedValue={Math.round(battenVolumeGable * 100) / 100}
+                    overrideValue={roofOverrides.roofBattenVolume}
+                    unit="м³"
+                    onOverride={(v: number | undefined) => setRoofOverrides((prev) => ({ ...prev, roofBattenVolume: v }))}
+                  />
                   <p className="mt-2 text-xs text-zinc-500">Шаг стропил 0,6 м, обрешётка 0,4 м.</p>
                 </div>
               )}
@@ -766,5 +793,51 @@ export default function RoofPage({ embedInView, onSchemaClick }: RoofPageProps =
         </div>
       </main>
     </div>
+  )
+}
+
+export default function RoofPage(props: RoofPageProps = {}) {
+  const [showBigPlan, setShowBigPlan] = useState(false)
+  const onSchemaClick = props.onSchemaClick ?? (() => setShowBigPlan(true))
+  const effectiveEmbedInView = props.embedInView ?? false
+  return (
+    <>
+      <RoofPageContent {...props} embedInView={effectiveEmbedInView} onSchemaClick={onSchemaClick} initialProject={props.initialProject} />
+      {showBigPlan && (() => {
+        let width = 0
+        let length = 0
+        let overhang = 0.4
+        let height = 0.5
+        let roofType: 'single' | 'gable' = 'single'
+        let ridgeAlongLength = true
+        if (typeof window !== 'undefined') {
+          try {
+            const raw = sessionStorage.getItem(ROOF_STORAGE_KEY)
+            if (raw) {
+              const d = JSON.parse(raw) as { width?: number; length?: number; overhang?: number; height?: number; type?: string; ridgeAlongLength?: boolean }
+              width = Number(d.width) >= 0 ? Number(d.width) : 0
+              length = Number(d.length) >= 0 ? Number(d.length) : 0
+              if (Number(d.overhang) >= 0) overhang = Number(d.overhang)
+              if (Number(d.height) >= 0) height = Number(d.height)
+              if (d.type === 'gable') roofType = 'gable'
+              if (typeof d.ridgeAlongLength === 'boolean') ridgeAlongLength = d.ridgeAlongLength
+            }
+          } catch {
+            // ignore
+          }
+        }
+        return (
+          <DetailPlanRoofWalls4
+            width={width}
+            length={length}
+            overhang={overhang}
+            height={height}
+            roofType={roofType}
+            ridgeAlongLength={ridgeAlongLength}
+            onClose={() => setShowBigPlan(false)}
+          />
+        )
+      })()}
+    </>
   )
 }

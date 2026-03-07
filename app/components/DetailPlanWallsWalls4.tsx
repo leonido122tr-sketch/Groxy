@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { LocalProject } from '@/lib/projects/localProjects'
 import type { Opening } from '@/lib/projects/localProjects'
 
@@ -10,6 +10,7 @@ const GRID_MARGIN_CELLS = 2
 const DIMENSION_OFFSET = 28
 const MAX_CONTENT_PX = 800
 const DIMENSION_FONT_SIZE = 13
+const TOUCH_HIT_PADDING = 24
 const DIM_TICK_45 = 4 / Math.sqrt(2)
 
 function fmtRu(n: number) {
@@ -22,15 +23,20 @@ type Props = {
   project: Extract<LocalProject, { type: 'walls_4' }>
   onOpeningsChange?: (openings: Opening[]) => void
   onClose: () => void
+  /** Только контент плана без шапки/кнопки — для вставки в PDF */
+  embedOnly?: boolean
 }
 
-export function DetailPlanWallsWalls4({ project, onOpeningsChange, onClose }: Props) {
+export function DetailPlanWallsWalls4({ project, onOpeningsChange, onClose, embedOnly = false }: Props) {
   const data = project.data
   const principle: Principle = data.principle === 'outside' ? 'outside' : 'inside'
   const isInside = principle === 'inside'
-  const t = Math.max(0.05, Number(data.thickness) ?? 0.25)
-  const W = Math.max(0.1, Number(data.width) || 5)
-  const L = Math.max(0.1, Number(data.length) || 5)
+  const rawW = Number(data.width) ?? 0
+  const rawL = Number(data.length) ?? 0
+  const hasNoDimensions = rawW <= 0 && rawL <= 0
+  const t = Math.max(0.05, Number(data.thickness) ?? 0)
+  const W = Math.max(0.1, rawW)
+  const L = Math.max(0.1, rawL)
   const w = isInside ? W + 2 * t : W
   const l = isInside ? L + 2 * t : L
 
@@ -45,16 +51,67 @@ export function DetailPlanWallsWalls4({ project, onOpeningsChange, onClose }: Pr
   const svgRef = useRef<SVGSVGElement>(null)
   const dragRef = useRef<{ index: number; startX: number; startY: number; startOffset: number; wall: 1 | 2 | 3 | 4; startCursorAlongWall: number } | null>(null)
   const openingsRef = useRef(openings)
+  const onOpeningsChangeRef = useRef(onOpeningsChange)
+  onOpeningsChangeRef.current = onOpeningsChange
+  const [dragState, setDragState] = useState<{ index: number; wall: 1 | 2 | 3 | 4; offset: number } | null>(null)
   useEffect(() => {
     openingsRef.current = openings
   }, [openings])
+  const effectiveOpenings = useMemo(() => {
+    if (!dragState) return openings
+    const list = [...openings]
+    const o = list[dragState.index]
+    if (o) list[dragState.index] = { ...o, wall: dragState.wall, offset: dragState.offset }
+    return list
+  }, [openings, dragState])
 
-  if (t >= w || t >= l) {
+  useEffect(() => {
+    if (embedOnly) return
+    const handleDocPointerUp = () => {
+      if (!dragRef.current) return
+      const final = openingsRef.current
+      setOpenings(final)
+      onOpeningsChangeRef.current?.(final)
+      dragRef.current = null
+      setDragState(null)
+    }
+    document.addEventListener('pointerup', handleDocPointerUp)
+    document.addEventListener('pointercancel', handleDocPointerUp)
+    return () => {
+      document.removeEventListener('pointerup', handleDocPointerUp)
+      document.removeEventListener('pointercancel', handleDocPointerUp)
+    }
+  }, [embedOnly])
+
+  const handleClose = () => {
+    if (!embedOnly && onOpeningsChange) onOpeningsChange(openingsRef.current)
+    setDragState(null)
+    onClose()
+  }
+
+  if (hasNoDimensions && !embedOnly) {
     return (
-      <div className="fixed inset-0 z-50 flex flex-col bg-stone-50">
+      <div className="fixed inset-0 z-50 flex flex-col bg-stone-50 pt-safe" style={{ paddingTop: 'max(var(--safe-top), 24px)' }}>
         <header className="flex shrink-0 items-center justify-between border-b border-stone-200 bg-white px-4 py-3 shadow-sm">
           <h2 className="text-lg font-semibold text-stone-800">Стены — план</h2>
-          <button type="button" onClick={onClose} className="rounded-lg bg-stone-200 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-300">
+          <button type="button" onClick={handleClose} className="rounded-lg bg-stone-200 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-300">
+            Закрыть
+          </button>
+        </header>
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-4 text-center">
+          <p className="text-stone-600">Введите параметры стен (ширину и длину), чтобы отобразить план.</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (t >= w || t >= l) {
+    if (embedOnly) return <div className="bg-stone-50 p-4" data-pdf-plan="walls" style={{ width: 800 }}><p className="text-stone-600 text-center">Визуализация недоступна</p></div>
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col bg-stone-50 pt-safe" style={{ paddingTop: 'max(var(--safe-top), 24px)' }}>
+        <header className="flex shrink-0 items-center justify-between border-b border-stone-200 bg-white px-4 py-3 shadow-sm">
+          <h2 className="text-lg font-semibold text-stone-800">Стены — план</h2>
+          <button type="button" onClick={handleClose} className="rounded-lg bg-stone-200 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-300">
             Закрыть
           </button>
         </header>
@@ -113,10 +170,10 @@ export function DetailPlanWallsWalls4({ project, onOpeningsChange, onClose }: Pr
   const wallLen4 = l
 
   // Логика сегментов и внешних длин привязана к внутренним размерам (например 10×10 м: width/length — внутренние, w/l — внешние при principle inside).
-  const wall1Openings = openings.filter((o) => (o.wall ?? 1) === 1).sort((a, b) => (a.offset ?? 0) - (b.offset ?? 0))
-  const wall2Openings = openings.filter((o) => (o.wall ?? 1) === 2).sort((a, b) => (a.offset ?? 0) - (b.offset ?? 0))
-  const wall3Openings = openings.filter((o) => (o.wall ?? 1) === 3).sort((a, b) => (a.offset ?? 0) - (b.offset ?? 0))
-  const wall4Openings = openings.filter((o) => (o.wall ?? 1) === 4).sort((a, b) => (a.offset ?? 0) - (b.offset ?? 0))
+  const wall1Openings = effectiveOpenings.filter((o) => (o.wall ?? 1) === 1).sort((a, b) => (a.offset ?? 0) - (b.offset ?? 0))
+  const wall2Openings = effectiveOpenings.filter((o) => (o.wall ?? 1) === 2).sort((a, b) => (a.offset ?? 0) - (b.offset ?? 0))
+  const wall3Openings = effectiveOpenings.filter((o) => (o.wall ?? 1) === 3).sort((a, b) => (a.offset ?? 0) - (b.offset ?? 0))
+  const wall4Openings = effectiveOpenings.filter((o) => (o.wall ?? 1) === 4).sort((a, b) => (a.offset ?? 0) - (b.offset ?? 0))
 
   // Сегменты по внешним граням стен (0..w или 0..l)
   const segments1: { start: number; end: number; length: number }[] = []
@@ -235,6 +292,7 @@ export function DetailPlanWallsWalls4({ project, onOpeningsChange, onClose }: Pr
     else if (wall === 3) startCursorAlongWall = (totalW - contentX) / px
     else startCursorAlongWall = contentY / px
     dragRef.current = { index, startX: e.clientX, startY: e.clientY, startOffset, wall, startCursorAlongWall }
+    setDragState({ index, wall, offset: startOffset })
     ;(e.target as SVGElement).setPointerCapture?.(e.pointerId)
   }
 
@@ -288,32 +346,26 @@ export function DetailPlanWallsWalls4({ project, onOpeningsChange, onClose }: Pr
       dragRef.current.startOffset = newOffset
     }
     dragRef.current.wall = newWall
-    setOpenings((prev) => {
-      const next = [...prev]
-      const opening = next[index]
-      if (opening) next[index] = { ...opening, wall: newWall, offset: newOffset }
-      return next
-    })
+    const next = [...openings]
+    const opening = next[index]
+    if (opening) next[index] = { ...opening, wall: newWall, offset: newOffset }
+    openingsRef.current = next
+    setDragState((prev) => (prev && prev.index === index ? { ...prev, wall: newWall, offset: newOffset } : prev))
   }
 
   const handlePointerUp = (e: React.PointerEvent) => {
     ;(e.target as SVGElement).releasePointerCapture?.(e.pointerId)
     if (dragRef.current) {
+      setOpenings(openingsRef.current)
       onOpeningsChange?.(openingsRef.current)
       dragRef.current = null
+      setDragState(null)
     }
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-stone-50">
-      <header className="flex shrink-0 items-center justify-between border-b border-stone-200 bg-white px-4 py-3 shadow-sm">
-        <h2 className="text-lg font-semibold text-stone-800">Стены — план</h2>
-        <button type="button" onClick={onClose} className="rounded-lg bg-stone-200 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-300">
-          Закрыть
-        </button>
-      </header>
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4">
-        <svg ref={svgRef} viewBox={`0 0 ${svgW} ${svgH}`} className="block w-full max-w-full h-auto rounded-lg border border-stone-200 bg-white shadow-sm" preserveAspectRatio="xMidYMid meet" onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}>
+  const content = (
+    <div className={embedOnly ? 'bg-white p-4' : 'min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4'} style={embedOnly ? { width: 800 } : undefined} data-pdf-plan={embedOnly ? 'walls' : undefined}>
+        <svg ref={svgRef} viewBox={`0 0 ${svgW} ${svgH}`} className="block w-full max-w-full h-auto rounded-lg border border-stone-200 bg-white shadow-sm" preserveAspectRatio="xMidYMid meet" style={!embedOnly ? { touchAction: 'none' } : undefined} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}>
           <defs>
             <pattern id="grid-w4" width={GRID_CELL_PX} height={GRID_CELL_PX} patternUnits="userSpaceOnUse">
               <path d={`M ${GRID_CELL_PX} 0 L ${GRID_CELL_PX} ${GRID_CELL_PX} M 0 ${GRID_CELL_PX} L ${GRID_CELL_PX} ${GRID_CELL_PX}`} fill="none" stroke="#e7e5e4" strokeWidth="0.5" />
@@ -325,7 +377,7 @@ export function DetailPlanWallsWalls4({ project, onOpeningsChange, onClose }: Pr
               <path d={stripPath} fillRule="evenodd" fill="url(#grid-w4)" stroke="none" />
               <path d={innerPath} fill="url(#grid-w4)" stroke="none" />
               <path d={stripPath} fillRule="evenodd" fill="none" stroke="#57534e" strokeWidth="1.5" strokeLinejoin="miter" strokeLinecap="butt" />
-              {openings.map((o, i) => {
+              {effectiveOpenings.map((o, i) => {
                 const wall = (o.wall ?? 1) as 1 | 2 | 3 | 4
                 const ow = o.width ?? 0.9
                 const wallLen = wall === 1 || wall === 3 ? wallLen1 : wallLen2
@@ -336,8 +388,16 @@ export function DetailPlanWallsWalls4({ project, onOpeningsChange, onClose }: Pr
                 const offM = Math.max(minOff, Math.min(maxOff, o.offset ?? (wall === 3 ? 0 : t)))
                 const off = offM * px
                 const ww = ow * px
+                const gx = wall === 1 ? off : wall === 2 ? totalW - tPx : wall === 3 ? totalW - tPx - off - ww : 0
+                const gy = wall === 1 ? 0 : wall === 2 ? off : wall === 3 ? totalH - tPx : off
+                const gw = wall === 1 || wall === 3 ? ww : tPx
+                const gh = wall === 1 || wall === 3 ? tPx : ww
+                const hitX = Math.max(0, gx - TOUCH_HIT_PADDING)
+                const hitY = Math.max(0, gy - TOUCH_HIT_PADDING)
+                const hitW = Math.min(totalW - hitX, gw + 2 * TOUCH_HIT_PADDING)
+                const hitH = Math.min(totalH - hitY, gh + 2 * TOUCH_HIT_PADDING)
                 const grip = (
-                  <rect key="grip" x={wall === 1 ? off : wall === 2 ? totalW - tPx : wall === 3 ? totalW - tPx - off - ww : 0} y={wall === 1 ? 0 : wall === 2 ? off : wall === 3 ? totalH - tPx : off} width={wall === 1 || wall === 3 ? ww : tPx} height={wall === 1 || wall === 3 ? tPx : ww} fill="transparent" cursor="grab" onPointerDown={(ev) => handlePointerDown(ev, i)} />
+                  <rect key="grip" x={hitX} y={hitY} width={hitW} height={hitH} fill="transparent" cursor="grab" onPointerDown={(ev) => handlePointerDown(ev, i)} />
                 )
                 if (wall === 1) {
                   return (
@@ -441,11 +501,25 @@ export function DetailPlanWallsWalls4({ project, onOpeningsChange, onClose }: Pr
             </g>
           </g>
         </svg>
-        <p className="mt-3 text-center text-sm text-stone-500">
-          {onOpeningsChange ? 'Перетаскивайте проёмы вдоль стен (не в зонах пересечения). · ' : ''}
-          1 клетка = 0,5 м · Прямоугольные стены · наружная и внутренняя грани
-        </p>
+        {!embedOnly && (
+          <p className="mt-3 text-center text-sm text-stone-500">
+            {onOpeningsChange ? 'Перетаскивайте проёмы вдоль стен (не в зонах пересечения). · ' : ''}
+            1 клетка = 0,5 м · Прямоугольные стены · наружная и внутренняя грани
+          </p>
+        )}
       </div>
+  )
+  if (embedOnly) return content
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-stone-50 pt-safe" style={{ paddingTop: 'max(var(--safe-top), 24px)' }}>
+      <header className="flex shrink-0 items-center justify-between border-b border-stone-200 bg-white px-4 py-3 shadow-sm">
+        <h2 className="text-lg font-semibold text-stone-800">Стены — план</h2>
+        <button type="button" onClick={handleClose} className="rounded-lg bg-stone-200 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-300">
+          Закрыть
+        </button>
+      </header>
+      {content}
     </div>
   )
 }

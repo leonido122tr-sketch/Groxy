@@ -5,7 +5,8 @@ import Link from 'next/link'
 import { ArrowLeft, ChevronDown, Maximize2 } from 'lucide-react'
 import { useDirty } from '../../buildings-2/DirtyContext'
 import { EditableResultBlock } from '@/app/components/EditableResultBlock'
-import { getFoundationOverridesFromStorage, setFoundationOverridesInStorage } from '@/lib/projects/resultOverridesStorage'
+import { DetailPlanFoundationWalls3 } from '@/app/components/DetailPlanFoundationWalls3'
+import { setFoundationOverridesInStorage } from '@/lib/projects/resultOverridesStorage'
 
 type Principle = 'inside' | 'outside'
 
@@ -62,14 +63,18 @@ function clampNonNeg(n: number) {
   return Math.max(0, n)
 }
 
+type FoundationOverrides = { foundationVolume?: number; foundationReinforcement?: number; foundationHoops?: number }
+
 type FoundationPageProps = {
   /** При true скрываем шапку (используется при просмотре сохранённого проекта) */
   embedInView?: boolean
   /** При клике на визуализацию открыть детальный план (только при embedInView) */
   onSchemaClick?: () => void
+  /** Сохранённый проект (при просмотре) — переопределения инициализируются из него, как у стен */
+  initialProject?: { resultsOverrides?: FoundationOverrides }
 }
 
-export default function FoundationPage({ embedInView, onSchemaClick }: FoundationPageProps = {}) {
+function FoundationPageContent({ embedInView, onSchemaClick, initialProject }: FoundationPageProps = {}) {
   const { markDirty } = useDirty()
 
   const [left, setLeft] = useState(() => {
@@ -162,9 +167,12 @@ export default function FoundationPage({ embedInView, onSchemaClick }: Foundatio
   const backRef = useRef<HTMLInputElement>(null)
   const rightRef = useRef<HTMLInputElement>(null)
   const [activePart, setActivePart] = useState<'left' | 'back' | 'right' | null>(null)
-  const [foundationVolumeOverride, setFoundationVolumeOverride] = useState<number | undefined>(undefined)
-  const [foundationReinforcementOverride, setFoundationReinforcementOverride] = useState<number | undefined>(undefined)
-  const [foundationHoopsOverride, setFoundationHoopsOverride] = useState<number | undefined>(undefined)
+  const ro = initialProject?.resultsOverrides
+  const [foundationOverrides, setFoundationOverrides] = useState<FoundationOverrides>(() => ({
+    foundationVolume: ro?.foundationVolume,
+    foundationReinforcement: ro?.foundationReinforcement,
+    foundationHoops: ro?.foundationHoops,
+  }))
   const [isConcreteGradeOpen, setIsConcreteGradeOpen] = useState(false)
   const isConcreteGradeRequired = left > 0 && back > 0 && right > 0 && height > 0 && thickness > 0
 
@@ -218,15 +226,20 @@ export default function FoundationPage({ embedInView, onSchemaClick }: Foundatio
     }
   }, [left, back, right, height, thickness, principle, concreteGrade])
 
+  // Как у стен: пишем в storage при изменении overrides, помечаем dirty при расхождении с initial
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const overrides = getFoundationOverridesFromStorage('3')
-    queueMicrotask(() => {
-      if (overrides.foundationVolume != null) setFoundationVolumeOverride(overrides.foundationVolume)
-      if (overrides.foundationReinforcement != null) setFoundationReinforcementOverride(overrides.foundationReinforcement)
-      if (overrides.foundationHoops != null) setFoundationHoopsOverride(overrides.foundationHoops)
-    })
-  }, [])
+    setFoundationOverridesInStorage('3', foundationOverrides)
+    const initial = initialProject?.resultsOverrides ?? {}
+    const overridesChanged =
+      JSON.stringify(foundationOverrides) !==
+      JSON.stringify({ foundationVolume: initial.foundationVolume, foundationReinforcement: initial.foundationReinforcement, foundationHoops: initial.foundationHoops })
+    if (overridesChanged) {
+      sessionStorage.setItem('projectIsDirty', 'true')
+      markDirty()
+      window.dispatchEvent(new CustomEvent('projectDataChanged'))
+    }
+  }, [foundationOverrides, initialProject?.resultsOverrides])
 
   // Расчет результатов
   const results = useMemo(() => {
@@ -264,7 +277,7 @@ export default function FoundationPage({ embedInView, onSchemaClick }: Foundatio
                 <ArrowLeft className="h-5 w-5" aria-label="Назад" />
               </Link>
               <h1 className="text-2xl font-bold">Фундамент</h1>
-              <div className="w-[88px]" />
+              <div className="w-9" />
             </div>
           </div>
         </header>
@@ -314,7 +327,7 @@ export default function FoundationPage({ embedInView, onSchemaClick }: Foundatio
         {/* mini visualization (same style as 2-walls) */}
         <div className="mt-3 overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-6">
           <div className="relative flex items-center justify-center">
-            {embedInView && onSchemaClick && (
+            {onSchemaClick && (
               <button
                 type="button"
                 onClick={onSchemaClick}
@@ -618,52 +631,72 @@ export default function FoundationPage({ embedInView, onSchemaClick }: Foundatio
               <EditableResultBlock
                 label="Объём"
                 calculatedValue={results.volume}
-                overrideValue={foundationVolumeOverride}
+                overrideValue={foundationOverrides.foundationVolume}
                 unit="м³"
-                onOverride={(v: number | undefined) => {
-                  setFoundationVolumeOverride(v)
-                  if (typeof window !== 'undefined') {
-                    setFoundationOverridesInStorage('3', { foundationVolume: v })
-                    sessionStorage.setItem('projectIsDirty', 'true')
-                    markDirty()
-                    window.dispatchEvent(new CustomEvent('projectDataChanged'))
-                  }
-                }}
+                onOverride={(v: number | undefined) => setFoundationOverrides((prev) => ({ ...prev, foundationVolume: v }))}
               />
               <EditableResultBlock
                 label="Арматура"
                 calculatedValue={results.reinforcement}
-                overrideValue={foundationReinforcementOverride}
+                overrideValue={foundationOverrides.foundationReinforcement}
                 unit="м"
-                onOverride={(v: number | undefined) => {
-                  setFoundationReinforcementOverride(v)
-                  if (typeof window !== 'undefined') {
-                    setFoundationOverridesInStorage('3', { foundationReinforcement: v })
-                    sessionStorage.setItem('projectIsDirty', 'true')
-                    markDirty()
-                    window.dispatchEvent(new CustomEvent('projectDataChanged'))
-                  }
-                }}
+                onOverride={(v: number | undefined) => setFoundationOverrides((prev) => ({ ...prev, foundationReinforcement: v }))}
               />
               <EditableResultBlock
                 label="Хомуты (шаг 0,25 м)"
                 calculatedValue={results.hoops}
-                overrideValue={foundationHoopsOverride}
+                overrideValue={foundationOverrides.foundationHoops}
                 unit="м"
-                onOverride={(v: number | undefined) => {
-                  setFoundationHoopsOverride(v)
-                  if (typeof window !== 'undefined') {
-                    setFoundationOverridesInStorage('3', { foundationHoops: v })
-                    sessionStorage.setItem('projectIsDirty', 'true')
-                    markDirty()
-                    window.dispatchEvent(new CustomEvent('projectDataChanged'))
-                  }
-                }}
+                onOverride={(v: number | undefined) => setFoundationOverrides((prev) => ({ ...prev, foundationHoops: v }))}
               />
             </div>
           </div>
         )}
       </main>
     </div>
+  )
+}
+
+export default function FoundationPage(props: FoundationPageProps = {}) {
+  const [showBigPlan, setShowBigPlan] = useState(false)
+  const onSchemaClick = props.onSchemaClick ?? (() => setShowBigPlan(true))
+  const effectiveEmbedInView = props.embedInView ?? false
+  return (
+    <>
+      <FoundationPageContent {...props} embedInView={effectiveEmbedInView} onSchemaClick={onSchemaClick} initialProject={props.initialProject} />
+      {showBigPlan &&
+        (() => {
+          let left = 0
+          let back = 0
+          let right = 0
+          let thickness = 0.25
+          let principle: 'inside' | 'outside' = 'inside'
+          if (typeof window !== 'undefined') {
+            try {
+              const raw = sessionStorage.getItem('currentProjectData_foundation_3')
+              if (raw) {
+                const d = JSON.parse(raw) as { left?: number; back?: number; right?: number; thickness?: number; principle?: 'inside' | 'outside' }
+                left = Number(d.left) >= 0 ? Number(d.left) : 0
+                back = Number(d.back) >= 0 ? Number(d.back) : 0
+                right = Number(d.right) >= 0 ? Number(d.right) : 0
+                if (Number(d.thickness) >= 0) thickness = Number(d.thickness)
+                if (d.principle === 'inside' || d.principle === 'outside') principle = d.principle
+              }
+            } catch {
+              // ignore
+            }
+          }
+          return (
+            <DetailPlanFoundationWalls3
+              left={left}
+              back={back}
+              right={right}
+              thickness={thickness}
+              principle={principle}
+              onClose={() => setShowBigPlan(false)}
+            />
+          )
+        })()}
+    </>
   )
 }

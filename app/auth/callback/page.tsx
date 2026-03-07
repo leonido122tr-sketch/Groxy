@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { createClient, isSupabaseNetworkError } from '@/lib/supabase/client'
 
 export default function AuthCallbackPage() {
   const router = useRouter()
@@ -14,7 +14,7 @@ export default function AuthCallbackPage() {
         const supabase = createClient()
         
         // Обрабатываем сессию из URL (для OAuth callback)
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+        const { error: sessionError } = await supabase.auth.getSession()
         
         if (sessionError) {
           console.error('Session error:', sessionError)
@@ -60,20 +60,21 @@ export default function AuthCallbackPage() {
         } else {
           setTimeout(() => router.push('/login'), 500)
         }
-      } catch (err: any) {
-        console.error('Auth check error:', err)
-        // Если это ошибка refresh token, очищаем сессию
-        if (err?.message?.includes('Refresh Token') || err?.message?.includes('Invalid Refresh Token')) {
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Ошибка авторизации'
+        if (isSupabaseNetworkError(err)) {
+          setError('Нет связи с сервером. Проверьте интернет и попробуйте снова.')
+        } else if (message.includes('Refresh Token') || message.includes('Invalid Refresh Token')) {
           try {
             const supabase = createClient()
             await supabase.auth.signOut()
             setError('Сессия истекла. Пожалуйста, войдите снова.')
           } catch (signOutError) {
             console.error('Ошибка при выходе:', signOutError)
-            setError(err.message || 'Ошибка авторизации')
+            setError(message)
           }
         } else {
-          setError(err.message || 'Ошибка авторизации')
+          setError(message)
         }
         setTimeout(() => router.push('/login'), 2000)
       }

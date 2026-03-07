@@ -2,9 +2,12 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
+import Image from 'next/image'
+import { createClient, isSupabaseNetworkError } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { Alert } from '@/app/components/Alert'
+import { ArrowLeft } from 'lucide-react'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -18,7 +21,7 @@ export default function LoginPage() {
   let supabase: SupabaseClient | null = null
   try {
     supabase = createClient()
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Ошибка создания Supabase клиента:', err)
     // supabase будет null, обработаем это в handleLogin
   }
@@ -54,17 +57,18 @@ export default function LoginPage() {
           router.push('/dashboard');
           return;
         }
-      } catch (error: any) {
-        console.error('Ошибка проверки сессии:', error);
-        // Если это ошибка refresh token, очищаем сессию
-        if (error?.message?.includes('Refresh Token') || error?.message?.includes('Invalid Refresh Token')) {
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error)
+        if (isSupabaseNetworkError(error)) {
+          // Нет связи — считаем не авторизованным, показываем форму входа
+        } else if (message.includes('Refresh Token') || message.includes('Invalid Refresh Token')) {
           try {
-            if (supabase) {
-              await supabase.auth.signOut();
-            }
+            if (supabase) await supabase.auth.signOut();
           } catch (signOutError) {
             console.error('Ошибка при выходе:', signOutError);
           }
+        } else {
+          console.error('Ошибка проверки сессии:', error);
         }
       } finally {
         setCheckingAuth(false);
@@ -141,9 +145,9 @@ export default function LoginPage() {
       console.log('Успешный вход:', data)
       router.push('/dashboard')
       router.refresh()
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Полная ошибка входа:', error)
-      const errorMessage = error.message || 'Ошибка при входе'
+      const errorMessage = error instanceof Error ? error.message : 'Ошибка при входе'
       setError(errorMessage)
       
       // Дополнительная информация для отладки
@@ -162,96 +166,124 @@ export default function LoginPage() {
   if (checkingAuth) {
     return (
       <div className="flex min-h-app pt-safe pb-safe items-center justify-center bg-black font-sans text-white">
-        <p className="text-zinc-400">Загрузка...</p>
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-white/10 border-t-blue-500"></div>
+          <p className="text-zinc-400">Загрузка...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-app pt-safe pb-safe items-center justify-center bg-black font-sans text-white">
-      <main className="w-full max-w-md rounded-2xl border border-white/10 bg-white/5 p-8 shadow-lg">
-        <h1 className="mb-6 text-3xl font-bold text-white">
-          Вход
-        </h1>
-        
-        {error && (
-          <div className="mb-4 rounded-lg bg-red-900/20 p-3 text-sm text-red-400">
-            {error}
-          </div>
-        )}
+    <div className="relative flex min-h-app pt-safe pb-safe items-center justify-center overflow-hidden bg-black font-sans text-white">
+      {/* Background gradients */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute -top-40 -left-40 h-80 w-80 rounded-full bg-blue-500/10 blur-3xl"></div>
+        <div className="absolute -bottom-40 -right-40 h-80 w-80 rounded-full bg-purple-500/10 blur-3xl"></div>
+      </div>
 
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label
-              htmlFor="email"
-              className="mb-2 block text-sm font-medium text-zinc-300"
-            >
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full rounded-lg border border-white/10 bg-black/30 px-4 py-2 text-white placeholder:text-zinc-500 focus:border-white/20 focus:outline-none"
-              placeholder="your@email.com"
-            />
-          </div>
-
-          <div>
-            <div className="mb-2 flex items-center justify-between">
-              <label
-                htmlFor="password"
-                className="block text-sm font-medium text-zinc-300"
-              >
-                Пароль
-              </label>
-              <Link
-                href="/forgot-password"
-                className="text-xs font-medium text-white hover:underline"
-              >
-                Забыли пароль?
-              </Link>
+      <main className="relative z-10 w-full max-w-md px-6">
+        <div className="glass-strong rounded-3xl p-6 shadow-2xl">
+          {/* Header */}
+          <div className="mb-6 text-center">
+            <div className="mb-3 inline-flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl bg-white/5 ring-1 ring-white/10">
+              <Image src="/logo.png" alt="Groxy" width={56} height={56} className="h-12 w-12 object-contain" />
             </div>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="w-full rounded-lg border border-white/10 bg-black/30 px-4 py-2 text-white placeholder:text-zinc-500 focus:border-white/20 focus:outline-none"
-              placeholder="••••••••"
-            />
+            <h1 className="text-3xl font-bold text-white">
+              Вход в систему
+            </h1>
+            <p className="mt-2 text-sm text-zinc-400">Войдите в свой аккаунт</p>
           </div>
+        
+          {error && (
+            <div className="mb-6">
+              <Alert variant="error">{error}</Alert>
+            </div>
+          )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-lg bg-white px-4 py-2 font-medium text-black transition-colors hover:bg-[#ccc] disabled:opacity-50"
-          >
-            {loading ? 'Вход...' : 'Войти'}
-          </button>
-        </form>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label
+                htmlFor="email"
+                className="mb-2 block text-sm font-semibold text-zinc-200"
+              >
+                Email
+              </label>
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                className="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-white placeholder:text-zinc-500 transition-all focus:border-blue-500/50 focus:bg-black/60 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                placeholder="your@email.com"
+              />
+            </div>
 
-        <p className="mt-6 text-center text-sm text-zinc-400">
-          Нет аккаунта?{' '}
-          <Link
-            href="/register"
-            className="font-medium text-white hover:underline"
-          >
-            Зарегистрироваться
-          </Link>
-        </p>
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <label
+                  htmlFor="password"
+                  className="block text-sm font-semibold text-zinc-200"
+                >
+                  Пароль
+                </label>
+                <Link
+                  href="/forgot-password"
+                  className="text-xs font-medium text-blue-400 transition-colors hover:text-blue-300"
+                >
+                  Забыли пароль?
+                </Link>
+              </div>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                className="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-white placeholder:text-zinc-500 transition-all focus:border-blue-500/50 focus:bg-black/60 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                placeholder="••••••••"
+              />
+            </div>
 
-        <p className="mt-4 text-center">
-          <Link
-            href="/"
-            className="text-sm text-zinc-400 hover:underline"
-          >
-            ← На главную
-          </Link>
-        </p>
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn-hover gradient-primary w-full rounded-xl px-4 py-3 font-semibold text-white shadow-glow disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white"></div>
+                  Вход...
+                </span>
+              ) : (
+                'Войти'
+              )}
+            </button>
+          </form>
+
+          <div className="mt-6 space-y-4">
+            <p className="text-center text-sm text-zinc-400">
+              Нет аккаунта?{' '}
+              <Link
+                href="/register"
+                className="font-semibold text-blue-400 transition-colors hover:text-blue-300"
+              >
+                Зарегистрироваться
+              </Link>
+            </p>
+
+            <p className="text-center">
+              <Link
+                href="/"
+                className="inline-flex items-center gap-2 text-sm text-zinc-400 transition-colors hover:text-blue-400"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                На главную
+              </Link>
+            </p>
+          </div>
+        </div>
       </main>
     </div>
   )

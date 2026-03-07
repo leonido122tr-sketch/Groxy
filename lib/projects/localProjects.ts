@@ -49,6 +49,15 @@ export type FoundationData = Record<string, unknown>
 /** Данные крыши при сохранении: для 2 стен — width, length; для 3 стен — left, back, right; общие — height, overhang */
 export type RoofData = Record<string, unknown>
 
+/**
+ * В приложении «проект» — это полный набор данных, а не только стены:
+ * - фундамент (foundation)
+ * - стены (data: параметры стен и проёмы)
+ * - крыша (roof)
+ * - комментарий в PDF (pdfComment) и заметки (notes)
+ * Сохранение, «есть изменения» (dirty), кнопка дискеты должны учитывать изменения в любой из этих частей.
+ */
+
 /** Переопределения итоговых расчётов, введённые пользователем вручную */
 export type ResultsOverrides = {
   wallsArea?: number

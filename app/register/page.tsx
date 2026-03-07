@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { Alert } from '@/app/components/Alert'
 
 export default function RegisterPage() {
   const [email, setEmail] = useState('')
@@ -94,7 +95,7 @@ export default function RegisterPage() {
 
     try {
       // Регистрируем пользователя - Supabase автоматически отправит код подтверждения на email
-      const { data, error } = await supabase.auth.signUp({
+      const { error } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -113,9 +114,9 @@ export default function RegisterPage() {
       // Переходим к шагу подтверждения кода
       setSuccess('Код подтверждения отправлен на вашу почту. Введите код ниже.')
       setStep('verify')
-    } catch (error: any) {
-      // Используем переведенное сообщение или дефолтное
-      setError(error.message || 'Ошибка при регистрации')
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error)
+      setError(msg || 'Ошибка при регистрации')
     } finally {
       setLoading(false)
     }
@@ -157,10 +158,10 @@ export default function RegisterPage() {
       // Перенаправляем на страницу настройки профиля
       router.push('/profile/setup')
       router.refresh()
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Полная ошибка проверки кода:', error)
-      const errorMessage = error.message || 'Ошибка при проверке кода'
-      setError(errorMessage)
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      setError(errorMessage || 'Ошибка при проверке кода')
     } finally {
       setLoading(false)
     }
@@ -187,10 +188,9 @@ export default function RegisterPage() {
       }
 
       setSuccess('Код отправлен повторно. Проверьте вашу почту.')
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Ошибка повторной отправки кода:', error)
-      // Переводим ошибку на русский язык
-      const errorMessage = error.message || ''
+      const errorMessage = error instanceof Error ? error.message : String(error)
       const translatedError = translateError(errorMessage)
       setError(translatedError || 'Ошибка при повторной отправке кода. Попробуйте позже.')
     } finally {
@@ -199,166 +199,207 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="flex min-h-app pt-safe pb-safe items-center justify-center bg-black font-sans text-white">
-      <main className="w-full max-w-md rounded-2xl border border-white/10 bg-white/5 p-8 shadow-lg">
-        <h1 className="mb-6 text-3xl font-bold text-white">
-          Регистрация
-        </h1>
+    <div className="relative flex min-h-app pt-safe pb-safe items-center justify-center overflow-hidden bg-black font-sans text-white">
+      {/* Background gradients */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute -top-40 -left-40 h-80 w-80 rounded-full bg-blue-500/10 blur-3xl"></div>
+        <div className="absolute -bottom-40 -right-40 h-80 w-80 rounded-full bg-purple-500/10 blur-3xl"></div>
+      </div>
+
+      <main className="relative z-10 w-full max-w-md px-6">
+        <div className="glass-strong rounded-3xl p-6 shadow-2xl">
+          <div className="mb-6 text-center">
+            <div className="mb-3 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-500 to-pink-600 shadow-glow-accent">
+              <svg className="h-7 w-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+              </svg>
+            </div>
+            <h1 className="text-3xl font-bold text-white">
+              {step === 'register' ? 'Регистрация' : 'Подтверждение'}
+            </h1>
+            <p className="mt-2 text-sm text-zinc-400">
+              {step === 'register' ? 'Создайте новый аккаунт' : 'Введите код из письма'}
+            </p>
+          </div>
         
-        {error && (
-          <div className="mb-4 rounded-lg bg-red-900/20 p-3 text-sm text-red-400">
-            {error}
-          </div>
-        )}
-
-        {success && (
-          <div className="mb-4 rounded-lg bg-green-900/20 p-3 text-sm text-green-400">
-            {success}
-          </div>
-        )}
-
-        {step === 'register' ? (
-          <form onSubmit={handleRegister} className="space-y-4">
-            <div>
-              <label
-                htmlFor="email"
-                className="mb-2 block text-sm font-medium text-zinc-300"
-              >
-                Email
-              </label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="w-full rounded-lg border border-white/10 bg-black/30 px-4 py-2 text-white placeholder:text-zinc-500 focus:border-white/20 focus:outline-none"
-                placeholder="your@email.com"
-              />
+          {error && (
+            <div className="mb-6">
+              <Alert variant="error">{error}</Alert>
             </div>
+          )}
 
-            <div>
-              <label
-                htmlFor="password"
-                className="mb-2 block text-sm font-medium text-zinc-300"
-              >
-                Пароль
-              </label>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                className="w-full rounded-lg border border-white/10 bg-black/30 px-4 py-2 text-white placeholder:text-zinc-500 focus:border-white/20 focus:outline-none"
-                placeholder="••••••••"
-              />
+          {success && (
+            <div className="mb-6">
+              <Alert variant="success">{success}</Alert>
             </div>
+          )}
 
-            <div>
-              <label
-                htmlFor="confirmPassword"
-                className="mb-2 block text-sm font-medium text-zinc-300"
+          {step === 'register' ? (
+            <form onSubmit={handleRegister} className="space-y-4">
+              <div>
+                <label
+                  htmlFor="email"
+                  className="mb-2 block text-sm font-semibold text-zinc-200"
+                >
+                  Email
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-white placeholder:text-zinc-500 transition-all focus:border-purple-500/50 focus:bg-black/60 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                  placeholder="your@email.com"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="password"
+                  className="mb-2 block text-sm font-semibold text-zinc-200"
+                >
+                  Пароль
+                </label>
+                <input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  className="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-white placeholder:text-zinc-500 transition-all focus:border-purple-500/50 focus:bg-black/60 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                  placeholder="••••••••"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="confirmPassword"
+                  className="mb-2 block text-sm font-semibold text-zinc-200"
+                >
+                  Подтвердите пароль
+                </label>
+                <input
+                  id="confirmPassword"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  className="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-white placeholder:text-zinc-500 transition-all focus:border-purple-500/50 focus:bg-black/60 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                  placeholder="••••••••"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="btn-hover gradient-accent w-full rounded-xl px-4 py-3 font-semibold text-white shadow-glow-accent disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Подтвердите пароль
-              </label>
-              <input
-                id="confirmPassword"
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                className="w-full rounded-lg border border-white/10 bg-black/30 px-4 py-2 text-white placeholder:text-zinc-500 focus:border-white/20 focus:outline-none"
-                placeholder="••••••••"
-              />
-            </div>
+                {loading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white"></div>
+                    Отправка кода...
+                  </span>
+                ) : (
+                  'Зарегистрироваться'
+                )}
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleVerifyCode} className="space-y-4">
+              <div className="rounded-xl bg-blue-500/10 border border-blue-500/20 p-4 text-sm text-blue-300">
+                <p>
+                  Мы отправили код подтверждения на{' '}
+                  <span className="font-semibold text-white">{email}</span>
+                </p>
+                <p className="mt-2">
+                  Введите код из письма ниже для завершения регистрации.
+                </p>
+              </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-lg bg-white px-4 py-2 font-medium text-black transition-colors hover:bg-[#ccc] disabled:opacity-50"
-            >
-              {loading ? 'Отправка кода...' : 'Зарегистрироваться'}
-            </button>
-          </form>
-        ) : (
-          <form onSubmit={handleVerifyCode} className="space-y-4">
-            <p className="mb-4 text-sm text-zinc-400">
-              Мы отправили код подтверждения на <span className="font-medium text-white">{email}</span>
-              <br />
-              Введите код из письма ниже для завершения регистрации.
+              <div>
+                <label
+                  htmlFor="code"
+                  className="mb-2 block text-sm font-semibold text-zinc-200"
+                >
+                  Код подтверждения
+                </label>
+                <input
+                  id="code"
+                  type="text"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                  required
+                  maxLength={6}
+                  className="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-center text-2xl tracking-widest text-white placeholder:text-zinc-500 transition-all focus:border-purple-500/50 focus:bg-black/60 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                  placeholder="000000"
+                  autoComplete="one-time-code"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="btn-hover gradient-accent w-full rounded-xl px-4 py-3 font-semibold text-white shadow-glow-accent disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white"></div>
+                    Проверка...
+                  </span>
+                ) : (
+                  'Подтвердить и завершить регистрацию'
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleResendCode}
+                disabled={loading}
+                className="glass w-full rounded-xl px-4 py-3 text-sm font-semibold text-white transition-all hover:bg-white/15 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Отправить код повторно
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setStep('register')
+                  setCode('')
+                  setError(null)
+                  setSuccess(null)
+                }}
+                className="w-full text-sm text-zinc-400 transition-colors hover:text-zinc-300"
+              >
+                Изменить данные регистрации
+              </button>
+            </form>
+          )}
+
+          <div className="mt-6 space-y-4">
+            <p className="text-center text-sm text-zinc-400">
+              Уже есть аккаунт?{' '}
+              <Link
+                href="/login"
+                className="font-semibold text-purple-400 transition-colors hover:text-purple-300"
+              >
+                Войти
+              </Link>
             </p>
 
-            <div>
-              <label
-                htmlFor="code"
-                className="mb-2 block text-sm font-medium text-zinc-300"
+            <p className="text-center">
+              <Link
+                href="/"
+                className="inline-flex items-center gap-2 text-sm text-zinc-400 transition-colors hover:text-zinc-300"
               >
-                Код подтверждения
-              </label>
-              <input
-                id="code"
-                type="text"
-                value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-                required
-                maxLength={6}
-                className="w-full rounded-lg border border-white/10 bg-black/30 px-4 py-2 text-center text-2xl tracking-widest text-white placeholder:text-zinc-500 focus:border-white/20 focus:outline-none"
-                placeholder="000000"
-                autoComplete="one-time-code"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-lg bg-white px-4 py-2 font-medium text-black transition-colors hover:bg-[#ccc] disabled:opacity-50"
-            >
-              {loading ? 'Проверка...' : 'Подтвердить и завершить регистрацию'}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleResendCode}
-              disabled={loading}
-              className="w-full rounded-lg border border-white/10 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-white/10 disabled:opacity-50"
-            >
-              Отправить код повторно
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setStep('register')
-                setCode('')
-                setError(null)
-                setSuccess(null)
-              }}
-              className="w-full text-sm text-zinc-400 hover:underline"
-            >
-              Изменить данные регистрации
-            </button>
-          </form>
-        )}
-
-        <p className="mt-6 text-center text-sm text-zinc-400">
-          Уже есть аккаунт?{' '}
-          <Link
-            href="/login"
-            className="font-medium text-white hover:underline"
-          >
-            Войти
-          </Link>
-        </p>
-
-        <p className="mt-4 text-center">
-          <Link
-            href="/"
-            className="text-sm text-zinc-400 hover:underline"
-          >
-            ← На главную
-          </Link>
-        </p>
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+                На главную
+              </Link>
+            </p>
+          </div>
+        </div>
       </main>
     </div>
   )

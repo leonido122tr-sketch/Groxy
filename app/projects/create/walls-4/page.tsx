@@ -1,9 +1,7 @@
 'use client'
 
-import Walls4Calculator from './walls4Calculator'
+import ProjectHub from '../ProjectHub'
 
-export default function Walls4Page() {
-  return <Walls4Calculator mode="create" />
+export default function Walls4ProjectPage() {
+  return <ProjectHub projectType="walls_4" title="Отдельная постройка 4 стены" />
 }
-
-

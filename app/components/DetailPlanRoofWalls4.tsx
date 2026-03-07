@@ -20,9 +20,28 @@ type Props = {
   roofType?: 'single' | 'gable'
   ridgeAlongLength?: boolean
   onClose: () => void
+  /** Только контент плана без шапки/кнопки — для вставки в PDF */
+  embedOnly?: boolean
 }
 
-export function DetailPlanRoofWalls4({ width: W, length: L, overhang = 0.4, height = 0.5, roofType = 'single', ridgeAlongLength = true, onClose }: Props) {
+export function DetailPlanRoofWalls4({ width: W, length: L, overhang = 0.4, height = 0.5, roofType = 'single', ridgeAlongLength = true, onClose, embedOnly = false }: Props) {
+  const hasNoDimensions = (Number(W) ?? 0) <= 0 && (Number(L) ?? 0) <= 0
+  if (hasNoDimensions && !embedOnly) {
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col bg-stone-50 pt-safe" style={{ paddingTop: 'max(var(--safe-top), 24px)' }}>
+        <header className="flex shrink-0 items-center justify-between border-b border-stone-200 bg-white px-4 py-3 shadow-sm">
+          <h2 className="text-lg font-semibold text-stone-800">Крыша — план</h2>
+          <button type="button" onClick={onClose} className="rounded-lg bg-stone-200 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-300">
+            Закрыть
+          </button>
+        </header>
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-4 text-center">
+          <p className="text-stone-600">Введите параметры крыши (ширину и длину), чтобы отобразить план.</p>
+        </div>
+      </div>
+    )
+  }
+
   const w = Math.max(0.1, W)
   const l = Math.max(0.1, L)
   const outW = w + 2 * overhang
@@ -46,22 +65,15 @@ export function DetailPlanRoofWalls4({ width: W, length: L, overhang = 0.4, heig
   const innerX = overhangPx
   const innerY = overhangPx
   const isGable = roofType === 'gable'
-  const ridgeX1 = innerX
-  const ridgeX2 = innerX + innerW
-  const ridgeY1 = innerY
-  const ridgeY2 = innerY + innerH
-  const ridgeMidX = (ridgeX1 + ridgeX2) / 2
-  const ridgeMidY = (ridgeY1 + ridgeY2) / 2
+  const ridgeMidX = innerX + innerW / 2
+  const ridgeMidY = innerY + innerH / 2
+  const ridgeLineX1 = 0
+  const ridgeLineX2 = outWPx
+  const ridgeLineY1 = 0
+  const ridgeLineY2 = outLPx
 
-  return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-stone-50">
-      <header className="flex shrink-0 items-center justify-between border-b border-stone-200 bg-white px-4 py-3 shadow-sm">
-        <h2 className="text-lg font-semibold text-stone-800">Крыша — план</h2>
-        <button type="button" onClick={onClose} className="rounded-lg bg-stone-200 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-300">
-          Закрыть
-        </button>
-      </header>
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4">
+  const content = (
+    <div className={embedOnly ? 'bg-white p-4' : 'min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4'} style={embedOnly ? { width: 800 } : undefined} data-pdf-plan={embedOnly ? 'roof' : undefined}>
         <svg viewBox={`0 0 ${svgW} ${svgH}`} className="block w-full max-w-full h-auto rounded-lg border border-stone-200 bg-white shadow-sm" preserveAspectRatio="xMidYMid meet">
           <defs>
             <pattern id="grid-r4" width={px * GRID_STEP_M} height={px * GRID_STEP_M} patternUnits="userSpaceOnUse">
@@ -76,12 +88,12 @@ export function DetailPlanRoofWalls4({ width: W, length: L, overhang = 0.4, heig
               <g stroke="#44403c" strokeWidth="1.5" fill="none">
                 {ridgeAlongLength ? (
                   <>
-                    <line x1={ridgeX1} y1={ridgeMidY} x2={ridgeX2} y2={ridgeMidY} strokeDasharray="4 2" />
+                    <line x1={ridgeMidX} y1={ridgeLineY1} x2={ridgeMidX} y2={ridgeLineY2} strokeDasharray="4 2" />
                     <text x={ridgeMidX} y={ridgeMidY - 10} textAnchor="middle" fill="#292524" fontSize={fontSz} fontWeight="600">Конёк</text>
                   </>
                 ) : (
                   <>
-                    <line x1={ridgeMidX} y1={ridgeY1} x2={ridgeMidX} y2={ridgeY2} strokeDasharray="4 2" />
+                    <line x1={ridgeLineX1} y1={ridgeMidY} x2={ridgeLineX2} y2={ridgeMidY} strokeDasharray="4 2" />
                     <text x={ridgeMidX + 12} y={ridgeMidY} textAnchor="middle" fill="#292524" fontSize={fontSz} fontWeight="600">Конёк</text>
                   </>
                 )}
@@ -104,10 +116,23 @@ export function DetailPlanRoofWalls4({ width: W, length: L, overhang = 0.4, heig
             </text>
           </g>
         </svg>
-        <p className="mt-3 text-center text-sm text-stone-500">
-          1 клетка = 1 м · Внешний контур — крыша со свесом со всех сторон, внутренний — здание (4 стены){isGable ? ' · Конёк задаётся тумблером' : ''}
-        </p>
+        {!embedOnly && (
+          <p className="mt-3 text-center text-sm text-stone-500">
+            1 клетка = 1 м · Внешний контур — крыша со свесом со всех сторон, внутренний — здание (4 стены){isGable ? ' · Конёк задаётся тумблером' : ''}
+          </p>
+        )}
       </div>
+  )
+  if (embedOnly) return content
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-stone-50 pt-safe" style={{ paddingTop: 'max(var(--safe-top), 24px)' }}>
+      <header className="flex shrink-0 items-center justify-between border-b border-stone-200 bg-white px-4 py-3 shadow-sm">
+        <h2 className="text-lg font-semibold text-stone-800">Крыша — план</h2>
+        <button type="button" onClick={onClose} className="rounded-lg bg-stone-200 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-300">
+          Закрыть
+        </button>
+      </header>
+      {content}
     </div>
   )
 }

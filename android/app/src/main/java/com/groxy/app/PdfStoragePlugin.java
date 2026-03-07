@@ -57,9 +57,9 @@ public class PdfStoragePlugin extends Plugin {
             
             // Сохраняем файл
             android.util.Log.d("PdfStoragePlugin", "Writing file...");
-            FileOutputStream fos = new FileOutputStream(pdfFile);
-            fos.write(pdfBytes);
-            fos.close();
+            try (FileOutputStream fos = new FileOutputStream(pdfFile)) {
+                fos.write(pdfBytes);
+            }
             android.util.Log.d("PdfStoragePlugin", "File written successfully");
 
             // Получаем URI файла через FileProvider
@@ -74,7 +74,9 @@ public class PdfStoragePlugin extends Plugin {
             } catch (Exception e) {
                 android.util.Log.w("PdfStoragePlugin", "FileProvider failed: " + e.getMessage());
                 // Если FileProvider не работает, используем file:// URI
-                fileUri = Uri.fromFile(pdfFile);
+                @SuppressWarnings("deprecation")
+                Uri fallback = Uri.fromFile(pdfFile);
+                fileUri = fallback;
                 android.util.Log.d("PdfStoragePlugin", "Using file:// URI: " + fileUri.toString());
             }
 

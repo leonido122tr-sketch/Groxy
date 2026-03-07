@@ -1,10 +1,13 @@
 'use client'
 
 import Link from 'next/link'
+import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { FileText, Share2, Trash2, Smartphone, Monitor } from 'lucide-react'
-import { type LocalProject, listLocalProjects, deleteLocalProject } from '@/lib/projects/localProjects'
-import { deleteDeviceProject, listDeviceProjects } from '@/lib/projects/deviceProjects'
+import { FileText, Trash2, Smartphone, Monitor, FolderOpen } from 'lucide-react'
+import { ConfirmModal } from '@/app/components/Modal'
+import { Alert } from '@/app/components/Alert'
+import { type LocalProject, listLocalProjects, deleteLocalProject, upsertLocalProject } from '@/lib/projects/localProjects'
+import { deleteDeviceProject, listDeviceProjects, saveProjectToDevice } from '@/lib/projects/deviceProjects'
 import { Capacitor } from '@capacitor/core'
 import { PdfViewer } from './PdfViewer'
 
@@ -59,6 +62,54 @@ function calculateResults(project: LocalProject) {
   return { area, volume }
 }
 
+/** Объём фундамента по данным проекта (как в PDF). Учитывает ручной переопределение из resultsOverrides. */
+function getFoundationVolume(project: LocalProject): number | null {
+  const override = project.resultsOverrides?.foundationVolume
+  if (typeof override === 'number' && Number.isFinite(override) && override >= 0) {
+    return Math.round(override * 100) / 100
+  }
+  const f = project.foundation
+  if (!f || typeof f !== 'object') return null
+  const t = Number((f as { thickness?: number }).thickness ?? 0)
+  const h = Number((f as { height?: number }).height ?? 0)
+  if (!(t > 0 && h > 0)) return null
+  const principle = (f as { principle?: string }).principle === 'inside' ? 'inside' : 'outside'
+  const adj = principle === 'inside' ? t / 2 : -t / 2
+  let length = 0
+  if ('width' in f && 'length' in f) {
+    const w = Math.max(0, Number(f.width) + adj)
+    const l = Math.max(0, Number(f.length) + adj)
+    length = w + l
+  } else if ('left' in f && 'back' in f && 'right' in f) {
+    length = Math.max(0, Number(f.left) + adj) + Math.max(0, Number(f.back) + adj) + Math.max(0, Number(f.right) + adj)
+  }
+  if (length <= 0) return null
+  return Math.round(length * t * h * 100) / 100
+}
+
+/** Площадь крыши по данным проекта. Учитывает ручной переопределение из resultsOverrides. */
+function getRoofArea(project: LocalProject): number | null {
+  const override = project.resultsOverrides?.roofArea
+  if (typeof override === 'number' && Number.isFinite(override) && override >= 0) {
+    return Math.round(override * 100) / 100
+  }
+  const r = project.roof
+  if (!r || typeof r !== 'object') return null
+  const area = Number((r as { area?: number }).area ?? 0)
+  return area > 0 ? Math.round(area * 100) / 100 : null
+}
+
+/** Есть ли у проекта заполненные размеры стен (хотя бы один > 0). */
+function hasWallDims(project: LocalProject): boolean {
+  const d = project.data
+  if (project.type === 'walls_2' || project.type === 'walls_4') {
+    const data = d as { width?: number; length?: number; height?: number; thickness?: number }
+    return (Number(data?.width) > 0 || Number(data?.length) > 0 || Number(data?.height) > 0 || Number(data?.thickness) > 0)
+  }
+  const data = d as { left?: number; back?: number; right?: number; height?: number; thickness?: number }
+  return (Number(data?.left) > 0 || Number(data?.back) > 0 || Number(data?.right) > 0 || Number(data?.height) > 0 || Number(data?.thickness) > 0)
+}
+
 function getMaterialLabel(material: string): string {
   const materials: Record<string, string> = {
     'brick_m100': 'Кирпич (M100)',
@@ -73,9 +124,13 @@ function getMaterialLabel(material: string): string {
   return materials[material] || 'Не выбран'
 }
 
+const PROJECTS_LIST_PATHS = ['/project', '/dashboard']
+
 export function LocalProjectsList() {
+  const router = useRouter()
+  const pathname = usePathname()
   const [allProjects, setAllProjects] = useState<LocalProject[]>([])
-  const [deviceAvailable, setDeviceAvailable] = useState(false)
+  // const [deviceAvailable, setDeviceAvailable] = useState(false) // Removed unused state
   const [deviceError, setDeviceError] = useState<string | null>(null)
   const [loading, setLoading] = useState<string | null>(null)
   const [deleteModalProject, setDeleteModalProject] = useState<LocalProject | null>(null)
@@ -105,11 +160,12 @@ export function LocalProjectsList() {
       
       const deviceProjects = await Promise.race([deviceProjectsPromise, timeoutPromise])
       projects.push(...deviceProjects.map(p => ({ ...p, platform: p.platform || 'android' as const })))
-      setDeviceAvailable(true)
+      // setDeviceAvailable(true) // Removed unused state update
       setDeviceError(null)
-    } catch (e: any) {
-      setDeviceAvailable(false)
-      setDeviceError(e?.message ?? 'Не удалось прочитать память устройства')
+    } catch (e: unknown) {
+      // setDeviceAvailable(false) // Removed unused state update
+      const message = e instanceof Error ? e.message : 'Не удалось прочитать память устройства'
+      setDeviceError(message)
     }
     
     // Убираем дубликаты по ID, оставляя более свежую версию
@@ -120,83 +176,26 @@ export function LocalProjectsList() {
         uniqueProjects.set(p.id, p)
       }
     }
-    
-    setAllProjects(Array.from(uniqueProjects.values()).sort((a, b) => 
+
+    const sorted = Array.from(uniqueProjects.values()).sort((a, b) =>
       new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-    ))
+    )
+    setAllProjects(sorted)
+    return sorted
   }
 
   useEffect(() => {
     reload()
     
     // Слушаем событие для открытия PDF viewer
-    const handleOpenPdfViewer = async (event: any) => {
+    const handleOpenPdfViewer = async (event: CustomEvent) => {
       const { pdfData, pdfUrl, filename, uri } = event.detail
       console.log('Событие openPdfViewer получено:', { hasPdfData: !!pdfData, hasPdfUrl: !!pdfUrl, filename, hasUri: !!uri })
       
-      // На Android используем FileOpener вместо PdfViewer
-      if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
-        try {
-          const { openPdfFromDevice } = await import('@/lib/pdf/pdfStorage')
-          
-          // Если есть URI сохранённого PDF, используем его
-          if (uri) {
-            await openPdfFromDevice(uri, pdfData instanceof Uint8Array ? pdfData : undefined, { userInitiated: true })
-            return
-          }
-          
-          // Если есть pdfData (bytes), сохраняем и открываем
-          if (pdfData && pdfData instanceof Uint8Array) {
-            const { savePdfToDevice } = await import('@/lib/pdf/pdfStorage')
-            const result = await savePdfToDevice(filename, pdfData)
-            if (result) {
-              const uri = typeof result === 'string' ? result : result.uri
-              const filePath = typeof result === 'string' ? undefined : result.path
-              await openPdfFromDevice(uri, pdfData, { userInitiated: true, filePath })
-            }
-            return
-          }
-          
-          // Если есть только pdfUrl (blob URL) - это старый способ, который не должен использоваться на Android
-          // Пытаемся прочитать blob и сохранить
-          if (pdfUrl && !uri && !pdfData) {
-            console.log('LocalProjectsList: получен blob URL на Android, пытаемся прочитать и сохранить')
-            try {
-              const response = await fetch(pdfUrl)
-              const blob = await response.blob()
-              const arrayBuffer = await blob.arrayBuffer()
-              const bytes = new Uint8Array(arrayBuffer)
-              
-              const { savePdfToDevice, openPdfFromDevice } = await import('@/lib/pdf/pdfStorage')
-              const result = await savePdfToDevice(filename, bytes)
-              if (result) {
-                const uri = typeof result === 'string' ? result : result.uri
-                const filePath = typeof result === 'string' ? undefined : result.path
-                await openPdfFromDevice(uri, bytes, { userInitiated: true, filePath })
-                // Очищаем blob URL
-                URL.revokeObjectURL(pdfUrl)
-              }
-              return
-            } catch (fetchError) {
-              console.error('LocalProjectsList: ошибка чтения blob URL:', fetchError)
-            }
-          }
-          
-          // Если ничего не сработало, просто игнорируем (не показываем PdfViewer на Android)
-          console.warn('LocalProjectsList: на Android получено событие openPdfViewer без URI или pdfData, игнорируем')
-          return
-        } catch (error: any) {
-          console.error('Ошибка открытия PDF через FileOpener в LocalProjectsList:', error)
-          alert('Не удалось открыть PDF. Убедитесь, что у вас установлено приложение для просмотра PDF.')
-          return
-        }
-      }
-      
-      // Для веб-версии и iOS показываем PdfViewer
       setPdfViewerData({ pdfData, pdfUrl, filename })
     }
-    
-    window.addEventListener('openPdfViewer', handleOpenPdfViewer as EventListener)
+    const openPdfListener: EventListener = (evt) => void handleOpenPdfViewer(evt as CustomEvent)
+    window.addEventListener('openPdfViewer', openPdfListener)
 
     // Перезагружаем список при возвращении в приложение/вкладку и при изменениях проектов
     const handleProjectsChanged = () => {
@@ -209,11 +208,44 @@ export function LocalProjectsList() {
     window.addEventListener('focus', handleFocus)
     
     return () => {
-      window.removeEventListener('openPdfViewer', handleOpenPdfViewer as EventListener)
-      window.removeEventListener('groxy:projects-changed', handleProjectsChanged as EventListener)
+      window.removeEventListener('openPdfViewer', openPdfListener)
+      window.removeEventListener('groxy:projects-changed', handleProjectsChanged)
       window.removeEventListener('focus', handleFocus)
     }
   }, [])
+
+  // Обновляем список при возврате на страницу «Мои проекты», чтобы с карточки открывался актуальный PDF
+  useEffect(() => {
+    if (pathname && PROJECTS_LIST_PATHS.includes(pathname)) {
+      void reload()
+    }
+  }, [pathname])
+
+  /** По нажатию «PDF» с карточки: всегда открываем из папки Groxy/pdfs, если файл есть; иначе генерируем и сохраняем */
+  const openPdfFromCard = async (project: LocalProject) => {
+    if (loading) return
+    setLoading(project.id)
+    try {
+      if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
+        const { getSavedPdfUri } = await import('@/lib/pdf/pdfStorage')
+        const filename = project.pdfFilename || `${project.id}.pdf`
+        const saved = getSavedPdfUri(filename)
+        if (saved) {
+          sessionStorage.setItem('pdfViewerUri', saved.uri)
+          sessionStorage.setItem('pdfViewerFilename', filename)
+          sessionStorage.setItem('pdfViewerFilePath', saved.path)
+          sessionStorage.setItem('pdfViewerReturnTo', '/project')
+          router.push(`/pdf-viewer?uri=${encodeURIComponent(saved.uri)}&filename=${encodeURIComponent(filename)}&returnTo=${encodeURIComponent('/project')}`)
+          return
+        }
+      }
+      const freshList = await reload()
+      const fresh = freshList.find((x) => x.id === project.id) ?? project
+      await generatePdf(fresh)
+    } finally {
+      setLoading(null)
+    }
+  }
 
   const generatePdf = async (project: LocalProject) => {
     if (loading) return
@@ -225,15 +257,21 @@ export function LocalProjectsList() {
       const principleLabel = project.data.principle === 'inside' ? 'Внутри' : 'Снаружи'
 
       const { generatePdfClient } = await import('@/lib/pdf/generatePdfClient')
-      
-      let pdfData: any = {
+      const { generatePdfWithPlanCapture } = await import('@/app/components/PdfPlanCapture')
+
+      const pdfData: Record<string, unknown> = {
         title: project.name,
         includeMeta: false,
         materialLabel,
         principleLabel,
         dims: {},
         results,
-        openings: (project.data.openings || []).map((o: any) => ({ width: o.width, height: o.height })),
+        openings: (project.data.openings || []).map((o: { width: number; height: number; offset?: number; wall?: number }) => ({
+          width: o.width,
+          height: o.height,
+          ...(typeof o.offset === 'number' && Number.isFinite(o.offset) ? { offset: o.offset } : {}),
+          ...(o.wall != null ? { wall: o.wall } : {}),
+        })),
         type: project.type,
       }
 
@@ -264,182 +302,86 @@ export function LocalProjectsList() {
         }
       }
 
-      const bytes = await generatePdfClient(pdfData)
-      const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-      const filename = `${project.name.trim() || 'Проект_строительства'}_${stamp}.pdf`
+      if (project.foundation && typeof project.foundation === 'object' && Object.keys(project.foundation).length > 0) {
+        pdfData.foundation = project.foundation
+      }
+      if (project.roof && typeof project.roof === 'object' && Object.keys(project.roof).length > 0) {
+        pdfData.roof = project.roof
+      }
+      if (project.pdfComment != null && String(project.pdfComment).trim() !== '') {
+        pdfData.pdfComment = project.pdfComment
+      }
+      if (project.resultsOverrides && typeof project.resultsOverrides === 'object' && Object.keys(project.resultsOverrides).length > 0) {
+        pdfData.resultsOverrides = project.resultsOverrides
+      }
+
+      const bytes =
+        (project.type === 'walls_2' || project.type === 'walls_3' || project.type === 'walls_4')
+          ? await generatePdfWithPlanCapture(project.type, pdfData as Parameters<typeof generatePdfWithPlanCapture>[1])
+          : await generatePdfClient(pdfData as Parameters<typeof generatePdfClient>[0])
+      const uint8ArrayToBase64 = (data: Uint8Array): string => {
+        let binary = ''
+        for (let i = 0; i < data.byteLength; i++) {
+          binary += String.fromCharCode(data[i])
+        }
+        return btoa(binary)
+      }
+      const base64Data = uint8ArrayToBase64(bytes)
 
       if (Capacitor.isNativePlatform()) {
-        // На Android сохраняем PDF на устройство и открываем через нативный Intent (FileOpener)
-        // pdf.js с worker не работает в Android WebView, поэтому используем стандартный способ
-        console.log('[LocalProjectsList.generatePdf] Сохранение и открытие PDF на Android...')
-        const { savePdfToDevice, openPdfFromDevice } = await import('@/lib/pdf/pdfStorage')
+        const filename = `${project.id}.pdf`
+        const { savePdfToDevice, getSavedPdfUri } = await import('@/lib/pdf/pdfStorage')
+        const existing = getSavedPdfUri(filename)
+        if (existing) {
+          const overwrite = window.confirm('Существующий PDF будет перезаписан. Продолжить?')
+          if (!overwrite) {
+            sessionStorage.setItem('pdfViewerUri', existing.uri)
+            sessionStorage.setItem('pdfViewerFilename', filename)
+            sessionStorage.setItem('pdfViewerFilePath', existing.path)
+            sessionStorage.setItem('pdfViewerReturnTo', '/project')
+            router.push(`/pdf-viewer?uri=${encodeURIComponent(existing.uri)}&filename=${encodeURIComponent(filename)}&returnTo=${encodeURIComponent('/project')}`)
+            return
+          }
+        }
+        console.log('[LocalProjectsList.generatePdf] Сохранение PDF на Android...')
         const result = await savePdfToDevice(filename, bytes)
         if (!result) {
           console.error('[LocalProjectsList.generatePdf] Не удалось сохранить PDF на устройство')
           throw new Error('Не удалось сохранить PDF')
         }
-        
-        // Обрабатываем как объект { uri, path } или как строку (для обратной совместимости)
-        const uri = typeof result === 'string' ? result : result.uri
-        const filePath = typeof result === 'string' ? undefined : result.path
-        
-        console.log('[LocalProjectsList.generatePdf] PDF сохранён, URI:', uri, 'path:', filePath)
-        console.log('[LocalProjectsList.generatePdf] Открытие PDF через FileOpener...')
-        
-        // Открываем через FileOpener (нативный Android Intent)
-        // Используем filePath, если доступен (работает надёжнее, чем content:// URI)
+        const saved = getSavedPdfUri(filename)
+        const uri = saved?.uri ?? (typeof result === 'string' ? result : result.uri)
+        const filePath = saved?.path ?? (typeof result === 'string' ? undefined : result.path)
+        const updatedProject = { ...project, updatedAt: new Date().toISOString(), pdfFilename: filename }
+        ;(window as unknown as { __GROXY_ALLOW_DEVICE_PROJECT_SAVE__?: boolean }).__GROXY_ALLOW_DEVICE_PROJECT_SAVE__ = true
         try {
-          await openPdfFromDevice(uri, bytes, { userInitiated: true, filePath })
-          console.log('[LocalProjectsList.generatePdf] PDF успешно открыт через FileOpener')
-        } catch (openError: any) {
-          console.error('[LocalProjectsList.generatePdf] Ошибка открытия PDF:', openError)
-          throw new Error('Не удалось открыть PDF: ' + (openError?.message || 'неизвестная ошибка'))
+          const { saveProjectToDevice } = await import('@/lib/projects/deviceProjects')
+          await saveProjectToDevice(updatedProject)
+        } finally {
+          ;(window as unknown as { __GROXY_ALLOW_DEVICE_PROJECT_SAVE__?: boolean }).__GROXY_ALLOW_DEVICE_PROJECT_SAVE__ = false
         }
+        sessionStorage.setItem('pdfViewerUri', uri)
+        sessionStorage.setItem('pdfViewerFilename', filename)
+        sessionStorage.setItem('pdfViewerPdfBytes', base64Data)
+        sessionStorage.setItem('pdfViewerReturnTo', '/project')
+        if (filePath) sessionStorage.setItem('pdfViewerFilePath', filePath)
+        router.push(`/pdf-viewer?uri=${encodeURIComponent(uri)}&filename=${encodeURIComponent(filename)}&returnTo=${encodeURIComponent('/project')}`)
         return
-      } else {
-        const blob = new Blob([bytes as BlobPart], { type: 'application/pdf' })
-        const url = URL.createObjectURL(blob)
-        window.open(url, '_blank')
-        setTimeout(() => URL.revokeObjectURL(url), 10000)
-      }
-    } catch (error: any) {
-      alert(error?.message || 'Не удалось создать PDF')
-    } finally {
-      setLoading(null)
-    }
-  }
-
-  const sharePdf = async (project: LocalProject) => {
-    if (loading) return
-    setLoading(project.id)
-
-    try {
-      const results = calculateResults(project)
-      const materialLabel = getMaterialLabel(project.data.material || '')
-      const principleLabel = project.data.principle === 'inside' ? 'Внутри' : 'Снаружи'
-
-      const { generatePdfClient } = await import('@/lib/pdf/generatePdfClient')
-      
-      let pdfData: any = {
-        title: project.name,
-        includeMeta: false,
-        materialLabel,
-        principleLabel,
-        dims: {},
-        results,
-        openings: (project.data.openings || []).map((o: any) => ({ width: o.width, height: o.height })),
-        type: project.type,
       }
 
-      if (project.type === 'walls_2') {
-        const data = project.data
-        pdfData.dims = {
-          width: data.width,
-          length: data.length,
-          height: data.height,
-          thickness: data.thickness,
-        }
-      } else if (project.type === 'walls_3') {
-        const data = project.data
-        pdfData.dims = {
-          left: data.left,
-          back: data.back,
-          right: data.right,
-          height: data.height,
-          thickness: data.thickness,
-        }
-      } else if (project.type === 'walls_4') {
-        const data = project.data
-        pdfData.dims = {
-          width: data.width,
-          length: data.length,
-          height: data.height,
-          thickness: data.thickness,
-        }
-      }
-
-      const bytes = await generatePdfClient(pdfData)
       const stamp = new Date().toISOString().replace(/[:.]/g, '-')
       const filename = `${project.name.trim() || 'Проект_строительства'}_${stamp}.pdf`
 
-      if (Capacitor.isNativePlatform()) {
-        // Используем Capacitor Share для нативных приложений
-        const { Share } = await import('@capacitor/share')
-        const { Filesystem, Directory } = await import('@capacitor/filesystem')
-        
-        const tempPath = `Groxy/temp_${Date.now()}_${filename}`
-        
-        // Эффективная конвертация Uint8Array в base64 (избегаем переполнения стека)
-        function uint8ArrayToBase64(bytes: Uint8Array): string {
-          let binary = ''
-          const len = bytes.byteLength
-          for (let i = 0; i < len; i++) {
-            binary += String.fromCharCode(bytes[i])
-          }
-          return btoa(binary)
-        }
-        
-        const base64Data = uint8ArrayToBase64(bytes)
-        
-        await Filesystem.mkdir({
-          path: 'Groxy',
-          directory: Directory.Documents,
-          recursive: true,
-        }).catch(() => {})
-        
-        await Filesystem.writeFile({
-          path: tempPath,
-          data: base64Data,
-          directory: Directory.Documents,
-        })
-        
-        const fileUri = await Filesystem.getUri({
-          path: tempPath,
-          directory: Directory.Documents,
-        })
-        
-        await Share.share({
-          title: project.name.trim() || 'Проект строительства',
-          text: project.name.trim() || 'Проект строительства',
-          url: fileUri.uri,
-          dialogTitle: 'Поделиться PDF',
-        })
-        
-        // Удаляем временный файл после небольшой задержки
-        setTimeout(() => {
-          Filesystem.deleteFile({
-            path: tempPath,
-            directory: Directory.Documents,
-          }).catch(() => {})
-        }, 10000)
-      } else {
-        // Для браузеров используем Web Share API
-        const file = new File([new Blob([bytes as BlobPart], { type: 'application/pdf' })], filename, { type: 'application/pdf' })
-        const nav: any = navigator
-        
-        if (nav?.share) {
-          const canShareFiles = typeof nav.canShare === 'function' ? nav.canShare({ files: [file] }) : true
-          if (canShareFiles) {
-            try {
-              await nav.share({ 
-                title: filename, 
-                text: project.name.trim() || 'Проект строительства', 
-                files: [file] 
-              })
-            } catch (e: any) {
-              if (e.name !== 'AbortError') {
-                throw e
-              }
-            }
-          } else {
-            throw new Error('Браузер не поддерживает отправку файлов')
-          }
-        } else {
-          throw new Error('Браузер не поддерживает функцию "Поделиться"')
-        }
-      }
-    } catch (error: any) {
-      alert(error?.message || 'Не удалось поделиться PDF')
+      const blob = new Blob([bytes as BlobPart], { type: 'application/pdf' })
+      const url = URL.createObjectURL(blob)
+      sessionStorage.setItem('pdfViewerUri', url)
+      sessionStorage.setItem('pdfViewerFilename', filename)
+      sessionStorage.setItem('pdfViewerPdfBytes', base64Data)
+      sessionStorage.setItem('pdfViewerReturnTo', '/project')
+      router.push(`/pdf-viewer?uri=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}&returnTo=${encodeURIComponent('/project')}`)
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Не удалось создать PDF'
+      alert(message)
     } finally {
       setLoading(null)
     }
@@ -462,8 +404,9 @@ export function LocalProjectsList() {
         deleteLocalProject(project.id)
       }
       await reload()
-    } catch (error: any) {
-      alert(error?.message || 'Не удалось удалить проект')
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Не удалось удалить проект'
+      alert(message)
     }
   }
 
@@ -482,8 +425,12 @@ export function LocalProjectsList() {
             onClose={() => setPdfViewerData(null)}
           />
         )}
-        <div className="mt-6">
-          <p className="text-sm text-zinc-400">Проекты не найдены.</p>
+        <div className="mt-4 rounded-2xl border border-dashed border-white/15 bg-white/5 p-8 text-center">
+          <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-xl bg-white/5">
+            <FolderOpen className="h-8 w-8 text-zinc-500" />
+          </div>
+          <p className="text-base font-semibold text-white">Проекты не найдены</p>
+          <p className="mt-1 text-sm text-zinc-400">Создайте свой первый проект, чтобы начать работу</p>
         </div>
       </>
     )
@@ -499,117 +446,137 @@ export function LocalProjectsList() {
           onClose={() => setPdfViewerData(null)}
         />
       )}
-      <div className="mt-6">
-        <h3 className="text-sm font-semibold text-white">Мои проекты</h3>
-        {deviceError && <p className="mt-2 text-xs text-red-400">{deviceError}</p>}
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {allProjects.map((p) => (
-            <div
-              key={p.id}
-              className="rounded-xl border border-white/10 bg-white/5 p-4"
-            >
-              <Link href={`/projects/view?id=${encodeURIComponent(p.id)}`} className="block">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1">
-                    <p className="font-semibold text-white">{p.name}</p>
-                    <p className="mt-1 text-xs font-medium text-zinc-300">
-                      {projectTypeLabel(p)}
-                    </p>
-                    <p className="mt-1 text-xs text-zinc-400">
-                      Обновлено: {new Date(p.updatedAt).toLocaleString()}
-                    </p>
-                  </div>
-                  {p.platform === 'android' ? (
-                    <span title="Создан на Android">
-                      <Smartphone className="h-5 w-5 flex-shrink-0 text-green-400" />
-                    </span>
-                  ) : (
-                    <span title="Создан в веб-версии">
-                      <Monitor className="h-5 w-5 flex-shrink-0 text-blue-400" />
-                    </span>
-                  )}
-                </div>
-              </Link>
-              <div className="mt-3 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    void generatePdf(p)
-                  }}
-                  disabled={loading === p.id}
-                  className="flex min-w-[72px] items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
-                  title="Открыть PDF"
-                >
-                  <FileText className="h-4 w-4" />
-                  <span>PDF</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    void sharePdf(p)
-                  }}
-                  disabled={loading === p.id}
-                  className="flex items-center justify-center rounded-lg bg-purple-600 px-3 py-2 text-xs font-semibold text-white hover:bg-purple-500 disabled:opacity-50"
-                  title="Поделиться PDF"
-                >
-                  <Share2 className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    handleDeleteClick(p)
-                  }}
-                  disabled={loading === p.id}
-                  className="flex items-center justify-center rounded-lg bg-red-500 px-3 py-2 text-xs font-semibold text-white hover:bg-red-600 disabled:opacity-50"
-                  title="Удалить проект"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          ))}
+      <div className="mt-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-white">Все проекты</h3>
+          <span className="glass rounded-lg px-3 py-1 text-sm font-medium text-zinc-300">
+            {allProjects.length} {allProjects.length === 1 ? 'проект' : allProjects.length < 5 ? 'проекта' : 'проектов'}
+          </span>
         </div>
-
-        {/* Модальное окно подтверждения удаления */}
-        {deleteModalProject && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-            onClick={handleDeleteCancel}
-          >
-            <div
-              className="w-full max-w-sm rounded-2xl border border-white/10 bg-white/10 p-6 shadow-lg backdrop-blur-sm"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <h3 className="text-lg font-semibold text-white">Удалить проект?</h3>
-              <p className="mt-2 text-sm text-zinc-300">
-                Вы уверены, что хотите удалить проект <strong className="text-white">{deleteModalProject.name}</strong>? Это действие нельзя
-                отменить.
-              </p>
-              <div className="mt-6 flex gap-3">
-                <button
-                  type="button"
-                  onClick={handleDeleteCancel}
-                  className="flex-1 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white hover:bg-white/10"
-                >
-                  Отмена
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDeleteConfirm}
-                  className="flex-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
-                >
-                  Удалить
-                </button>
-              </div>
-            </div>
+        {deviceError && (
+          <div className="mb-4">
+            <Alert variant="error">{deviceError}</Alert>
           </div>
         )}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {allProjects.map((p) => {
+            const results = calculateResults(p)
+            const foundationVol = getFoundationVolume(p)
+            const roofArea = getRoofArea(p)
+            const hasWalls = hasWallDims(p)
+            const wallsVol = p.resultsOverrides?.wallsVolume ?? results.volume
+            const stats: string[] = []
+            if (foundationVol != null) stats.push(`Фундамент: ${foundationVol.toFixed(2)} м³`)
+            if (hasWalls) stats.push(`Стены: ${wallsVol.toFixed(2)} м³`)
+            if (roofArea != null) stats.push(`Крыша: ${roofArea.toFixed(2)} м²`)
+            return (
+              <div
+                key={p.id}
+                className="group glass-strong rounded-2xl p-4 transition-all hover:bg-white/10 hover:shadow-xl"
+              >
+                <Link href={`/projects/view?id=${encodeURIComponent(p.id)}`} className="block">
+                  <div className="mb-3 flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <h4 className="min-w-0 flex-1 font-semibold text-white group-hover:text-blue-400 transition-colors line-clamp-1">
+                        {p.name}
+                      </h4>
+                      <p className="mt-1 text-xs font-medium text-zinc-300">
+                        {projectTypeLabel(p)}
+                      </p>
+                    </div>
+                    {p.platform === 'android' ? (
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-green-500/20" title="Создан на Android">
+                        <Smartphone className="h-4 w-4 text-green-400" />
+                      </div>
+                    ) : (
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/20" title="Создан в веб-версии">
+                        <Monitor className="h-4 w-4 text-blue-400" />
+                      </div>
+                    )}
+                  </div>
+
+                  {stats.length > 0 ? (
+                    <div className="mb-2 space-y-1 text-sm font-medium text-white">
+                      {stats.map((s) => (
+                        <p key={s}>{s}</p>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mb-2 text-sm text-zinc-500">Нет заполненных разделов</p>
+                  )}
+
+                  <p className="text-xs text-zinc-500">
+                    Обновлено: {new Date(p.updatedAt).toLocaleString('ru-RU', {
+                      day: 'numeric',
+                      month: 'short',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </p>
+                </Link>
+
+                <div className="mt-3 flex items-center gap-2 border-t border-white/5 pt-3">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      void openPdfFromCard(p)
+                    }}
+                    disabled={loading === p.id}
+                    className="btn-hover flex flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Открыть PDF"
+                  >
+                    {loading === p.id ? (
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white"></div>
+                    ) : (
+                      <>
+                        <FileText className="h-4 w-4" />
+                        <span>PDF</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      handleDeleteClick(p)
+                    }}
+                    disabled={loading === p.id}
+                    className="btn-hover flex items-center justify-center rounded-xl bg-red-500/20 px-3 py-2.5 text-xs font-semibold text-red-400 hover:bg-red-500 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Удалить проект"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        <ConfirmModal
+          isOpen={!!deleteModalProject}
+          onClose={handleDeleteCancel}
+          onConfirm={handleDeleteConfirm}
+          title="Удалить проект?"
+          description={
+            deleteModalProject ? (
+              <>
+                Вы уверены, что хотите удалить проект{' '}
+                <strong className="font-semibold text-white">{deleteModalProject.name}</strong>?{' '}
+                Это действие невозможно отменить.
+              </>
+            ) : (
+              ''
+            )
+          }
+          confirmLabel="Удалить"
+          cancelLabel="Отмена"
+          variant="danger"
+        />
+
       </div>
     </>
   )

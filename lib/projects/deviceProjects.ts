@@ -1,8 +1,5 @@
 import type { LocalProject } from './localProjects'
 
-const GROXY_DIR = 'Groxy'
-const PROJECTS_DIR = `${GROXY_DIR}/projects`
-
 async function isNative() {
   const { Capacitor } = await import('@capacitor/core')
   return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android'
@@ -13,7 +10,7 @@ export async function saveProjectToDevice(project: LocalProject) {
   
   // Жёсткая защита: запрещаем любые автоматические сохранения на устройство.
   // Разрешаем только когда UI явно поднял флаг (например "Сохранить", "Сохранить и выйти", "Перезаписать").
-  const allow = (window as any).__GROXY_ALLOW_DEVICE_PROJECT_SAVE__ === true
+  const allow = (window as Window & { __GROXY_ALLOW_DEVICE_PROJECT_SAVE__?: boolean }).__GROXY_ALLOW_DEVICE_PROJECT_SAVE__ === true
   if (!allow) {
     console.warn('saveProjectToDevice: BLOCKED (no explicit user consent)')
     return
@@ -21,7 +18,7 @@ export async function saveProjectToDevice(project: LocalProject) {
 
   // На Android используем JavaScript Interface
   try {
-    const nativeStorage = (window as any).NativeStorage
+    const nativeStorage = (window as Window & { NativeStorage?: { saveProject: (json: string) => string; setAllowProjectSave?: (v: boolean) => void } }).NativeStorage
     if (!nativeStorage || typeof nativeStorage.saveProject !== 'function') {
       console.warn('NativeStorage.saveProject не доступен')
       return
@@ -46,7 +43,7 @@ export async function saveProjectToDevice(project: LocalProject) {
     console.error('Ошибка сохранения проекта на устройство:', error)
   } finally {
     try {
-      const nativeStorage = (window as any).NativeStorage
+      const nativeStorage = (window as Window & { NativeStorage?: { saveProject: (json: string) => string; setAllowProjectSave?: (v: boolean) => void } }).NativeStorage
       if (nativeStorage && typeof nativeStorage.setAllowProjectSave === 'function') {
         nativeStorage.setAllowProjectSave(false)
       }
@@ -57,20 +54,21 @@ export async function saveProjectToDevice(project: LocalProject) {
 export async function listDeviceProjects(): Promise<LocalProject[]> {
   if (!(await isNative())) return []
   
-  const isValidProject = (p: any): p is LocalProject => {
+  const isValidProject = (p: unknown): p is LocalProject => {
     if (!p || typeof p !== 'object') return false
-    if (typeof p.id !== 'string' || !p.id) return false
-    if (typeof p.name !== 'string' || !p.name) return false
-    if (p.type !== 'walls_2' && p.type !== 'walls_3' && p.type !== 'walls_4') return false
-    if (!p.data || typeof p.data !== 'object') return false
+    const o = p as Record<string, unknown>
+    if (typeof o.id !== 'string' || !o.id) return false
+    if (typeof o.name !== 'string' || !o.name) return false
+    if (o.type !== 'walls_2' && o.type !== 'walls_3' && o.type !== 'walls_4') return false
+    if (!o.data || typeof o.data !== 'object') return false
 
-    const d = p.data as any
-    const isNum = (v: any) => typeof v === 'number' && Number.isFinite(v)
+    const d = o.data as Record<string, unknown>
+    const isNum = (v: unknown) => typeof v === 'number' && Number.isFinite(v)
 
-    if (p.type === 'walls_2') {
+    if (o.type === 'walls_2') {
       return isNum(d.width) && isNum(d.length) && isNum(d.height) && isNum(d.thickness)
     }
-    if (p.type === 'walls_3') {
+    if (o.type === 'walls_3') {
       return isNum(d.left) && isNum(d.back) && isNum(d.right) && isNum(d.height) && isNum(d.thickness)
     }
     // walls_4
@@ -79,7 +77,7 @@ export async function listDeviceProjects(): Promise<LocalProject[]> {
 
   // На Android используем JavaScript Interface
   try {
-    const nativeStorage = (window as any).NativeStorage
+    const nativeStorage = (window as Window & { NativeStorage?: { listProjects: () => string } }).NativeStorage
     if (!nativeStorage || typeof nativeStorage.listProjects !== 'function') {
       console.warn('NativeStorage.listProjects не доступен')
       return []
@@ -90,7 +88,7 @@ export async function listDeviceProjects(): Promise<LocalProject[]> {
     
     // Фильтруем только валидные проекты
     return projects
-      .filter((p: any) => isValidProject(p))
+      .filter((p: unknown) => isValidProject(p))
       .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
   } catch (error) {
     console.error('Ошибка загрузки проектов с устройства:', error)
@@ -103,7 +101,7 @@ export async function deleteDeviceProject(id: string) {
   
   // На Android используем JavaScript Interface
   try {
-    const nativeStorage = (window as any).NativeStorage
+    const nativeStorage = (window as Window & { NativeStorage?: { deleteProject: (id: string) => void } }).NativeStorage
     if (!nativeStorage || typeof nativeStorage.deleteProject !== 'function') {
       console.warn('NativeStorage.deleteProject не доступен')
       return

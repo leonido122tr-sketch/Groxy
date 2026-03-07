@@ -2,19 +2,7 @@
 // Этот файл используется вместо переменных окружения в статическом экспорте
 
 // Импортируем сгенерированный файл с встроенными значениями
-// Используем динамический импорт для гарантированного получения значений
-let GENERATED_URL = ''
-let GENERATED_KEY = ''
-
-// Синхронный импорт для встраивания в бандл
-try {
-  const generated = require('./supabase.generated')
-  GENERATED_URL = generated.SUPABASE_URL || ''
-  GENERATED_KEY = generated.SUPABASE_ANON_KEY || ''
-} catch (e) {
-  // Игнорируем ошибку импорта
-  console.warn('Не удалось загрузить сгенерированную конфигурацию:', e)
-}
+import { SUPABASE_URL as GENERATED_URL, SUPABASE_ANON_KEY as GENERATED_KEY } from './supabase.generated'
 
 // Используем встроенные значения или переменные окружения
 export const SUPABASE_URL = GENERATED_URL || (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_SUPABASE_URL ? process.env.NEXT_PUBLIC_SUPABASE_URL : '')
@@ -25,7 +13,7 @@ export const SUPABASE_ANON_KEY = GENERATED_KEY || (typeof process !== 'undefined
 export function getSupabaseConfig() {
   if (typeof window !== 'undefined') {
     // Проверяем глобальную конфигурацию
-    const globalConfig = (window as any).__SUPABASE_CONFIG__
+    const globalConfig = (window as Window & { __SUPABASE_CONFIG__?: { url?: string; key?: string } }).__SUPABASE_CONFIG__
     if (globalConfig?.url && globalConfig?.key) {
       return {
         url: globalConfig.url,

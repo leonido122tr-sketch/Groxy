@@ -1,16 +1,25 @@
 {
   "name": "app",
-  "version": "1.02",
+  "version": "1.04",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "prebuild": "node scripts/inject-env.js",
+    "dev": "cross-env NODE_OPTIONS=--max-old-space-size=4096 next dev --webpack",
+    "dev:webpack": "cross-env NODE_OPTIONS=--max-old-space-size=4096 next dev --webpack",
+    "dev:turbo": "cross-env NODE_OPTIONS=--max-old-space-size=4096 next dev --turbopack",
+    "prebuild": "node scripts/inject-env.js && node scripts/sync-pdf-worker.js",
+    "postinstall": "node scripts/sync-pdf-worker.js",
     "build": "next build",
+    "build:webpack": "next build --webpack",
     "start": "next start",
-    "lint": "eslint"
+    "serve": "npx --yes serve out -l 3000",
+    "lint": "eslint",
+    "android:build": "npm run build:webpack && npx cap sync android",
+    "android:run": "node scripts/android-install-run.js",
+    "android:run:5556": "node scripts/android-install-run.js 5556"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.0",
+    "@capacitor/app": "^8.0.0",
     "@capacitor/core": "^8.0.0",
     "@capacitor/filesystem": "^8.0.0",
     "@capacitor/share": "^8.0.0",
@@ -22,15 +31,19 @@
     "@supabase/auth-ui-shared": "^0.1.8",
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.89.0",
+    "@types/three": "^0.182.0",
     "date-fns": "^4.1.0",
+    "html-to-image": "^1.11.13",
     "lucide-react": "^0.562.0",
     "next": "16.1.1",
     "node-fetch": "^2.7.0",
     "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^5.4.530",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-dropzone": "^14.3.8",
-    "react-pdf": "^10.3.0"
+    "react-pdf": "^10.3.0",
+    "three": "^0.182.0"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.0.0",
@@ -39,6 +52,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/react-pdf": "^6.2.0",
+    "cross-env": "^7.0.3",
     "dotenv": "^17.2.3",
     "eslint": "^9",
     "eslint-config-next": "16.1.1",

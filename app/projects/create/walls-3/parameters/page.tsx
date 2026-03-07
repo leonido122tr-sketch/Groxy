@@ -1,0 +1,402 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { Download, ArrowLeft, Building2, Box, Home } from 'lucide-react'
+import { Capacitor } from '@capacitor/core'
+import { getLocalProject, type LocalProject } from '@/lib/projects/localProjects'
+import { listDeviceProjects } from '@/lib/projects/deviceProjects'
+
+export default function ProjectSetupPage() {
+  const router = useRouter()
+  const [projectName, setProjectName] = useState('')
+  const [includePdfMeta, setIncludePdfMeta] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
+  const [isProjectSaved, setIsProjectSaved] = useState(false)
+  const [savedPdfUri, setSavedPdfUri] = useState<string | null>(null)
+  const [pdfComment, setPdfComment] = useState('')
+  const [notes, setNotes] = useState('')
+
+  // Форматирование даты в формат ДД.ММ.ГГГГ
+  const formatDate = (date: Date): string => {
+    const day = String(date.getDate()).padStart(2, '0')
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const year = date.getFullYear()
+    return `${day}.${month}.${year}`
+  }
+
+  // Загружаем название проекта из sessionStorage при монтировании
+  useEffect(() => {
+    const savedName = sessionStorage.getItem('currentProjectName_walls_3')
+    if (savedName) {
+      setProjectName(savedName)
+    }
+    
+    // Загружаем состояние includePdfMeta
+    const savedIncludePdfMeta = sessionStorage.getItem('includePdfMeta_walls_3')
+    if (savedIncludePdfMeta === 'true') {
+      setIncludePdfMeta(true)
+    }
+    
+    // Проверяем, сохранен ли проект или есть данные в sessionStorage
+    const lastSavedProjectId = sessionStorage.getItem('lastSavedProjectId_walls_3')
+    const savedData = sessionStorage.getItem('currentProjectData_walls_3')
+    if (lastSavedProjectId || savedData) {
+      setIsProjectSaved(true)
+    }
+    
+    // Проверяем наличие сохраненного PDF URI
+    const savedPdfUriFromStorage = sessionStorage.getItem('pdfViewerUri')
+    if (savedPdfUriFromStorage) {
+      setSavedPdfUri(savedPdfUriFromStorage)
+    }
+    const savedComment = sessionStorage.getItem('pdfComment_walls_3')
+    if (savedComment != null) setPdfComment(savedComment)
+    const savedNotes = sessionStorage.getItem('notes_walls_3')
+    if (savedNotes != null) setNotes(savedNotes)
+  }, [])
+
+  const openPdf = () => {
+    if (!savedPdfUri) return
+    const savedFilename = sessionStorage.getItem('pdfViewerFilename') || 'document.pdf'
+    router.push(`/pdf-viewer?uri=${encodeURIComponent(savedPdfUri)}&filename=${encodeURIComponent(savedFilename)}`)
+  }
+
+  const handleGeneratePdfLegacy = async () => {
+    try {
+      // Получаем данные проекта из sessionStorage
+      type ProjectDataStub = { name?: string; material?: string; principle?: string; left?: number; back?: number; right?: number; height: number; thickness: number; openings?: Array<{ width?: number; height?: number }>; note?: string }
+      let projectData: ProjectDataStub | null = null
+      const savedData = sessionStorage.getItem('currentProjectData_walls_3')
+      if (savedData) {
+        projectData = JSON.parse(savedData)
+      } else {
+        // Пробуем загрузить сохраненный проект
+        const lastSavedProjectId = sessionStorage.getItem('lastSavedProjectId_walls_3')
+        if (!lastSavedProjectId) {
+          setToast('Сначала заполните параметры стен')
+          setTimeout(() => setToast(null), 3000)
+          return
+        }
+        
+        let project: LocalProject | null = null
+        if (Capacitor.isNativePlatform()) {
+          const deviceProjects = await listDeviceProjects()
+          project = deviceProjects.find(p => p.id === lastSavedProjectId && p.type === 'walls_3') || null
+        } else {
+          project = getLocalProject(lastSavedProjectId) as Extract<LocalProject, { type: 'walls_3' }> | null
+        }
+        
+        if (project && project.type === 'walls_3') {
+          projectData = {
+            name: project.name,
+            material: project.data.material,
+            principle: project.data.principle,
+            left: project.data.left,
+            back: project.data.back,
+            right: project.data.right,
+            height: project.data.height,
+            thickness: project.data.thickness,
+            openings: project.data.openings,
+            note: project.data.note,
+          }
+        } else {
+          setToast('Проект не найден. Заполните параметры стен')
+          setTimeout(() => setToast(null), 3000)
+          return
+        }
+      }
+
+      // Проверяем, что есть минимальные данные для создания PDF
+      const left = projectData?.left ?? 0
+      const back = projectData?.back ?? 0
+      const right = projectData?.right ?? 0
+      if (!projectData || left <= 0 || back <= 0 || right <= 0 || projectData.height <= 0 || projectData.thickness <= 0) {
+        setToast('Заполните все параметры стен для создания PDF')
+        setTimeout(() => setToast(null), 3000)
+        return
+      }
+
+      setToast('Создание PDF...')
+
+      // Импортируем функцию генерации PDF с захватом большой визуализации
+      const { generatePdfWithPlanCapture } = await import('@/app/components/PdfPlanCapture')
+      
+      // Вычисляем результаты для walls-3
+      const t = Math.max(0, projectData.thickness)
+      const sign = projectData.principle === 'inside' ? 1 : -1
+      const l1 = Math.max(0, left + sign * (t / 2))
+      const l2 = Math.max(0, back + sign * t)
+      const l3 = Math.max(0, right + sign * (t / 2))
+      const openingsArea = (projectData.openings || []).reduce((sum: number, o: { width?: number; height?: number }) => sum + (o.width || 0) * (o.height || 0), 0)
+      const wallArea = Math.max(0, (l1 + l2 + l3) * projectData.height - openingsArea)
+      const volume = Math.max(0, wallArea * t)
+      const maxSide = Math.max(left, right)
+      const floorArea = projectData.principle === 'inside'
+        ? Math.max(0, back * maxSide)
+        : Math.max(0, Math.max(0, back - t) * Math.max(0, maxSide - t / 2))
+
+      const results = { area: floorArea, volume }
+      const dims = {
+        left,
+        back,
+        right,
+        height: projectData.height,
+        thickness: projectData.thickness,
+      }
+
+      // Материал
+      const MATERIALS: Record<string, string> = {
+        'brick_m100': 'Кирпич (M100)',
+        'brick_m150': 'Кирпич (M150)',
+        'concrete_m200': 'Бетон (M200)',
+        'concrete_m300': 'Бетон (M300)',
+        'polystyrene_concrete_d400': 'Полистиролбетон (D400)',
+        'polystyrene_concrete_d500': 'Полистиролбетон (D500)',
+        'wood_pine': 'Дерево (Сосна)',
+        'wood_larch': 'Дерево (Лиственница)',
+      }
+      const materialLabel = MATERIALS[projectData.material ?? ''] || 'Не выбран'
+      const principleLabel = projectData.principle === 'inside' ? 'Внутри' : 'Снаружи'
+
+      const payload = {
+        title: projectName.trim() || projectData.name || 'Проект строительства',
+        includeMeta: includePdfMeta,
+        materialLabel,
+        principleLabel,
+        dims,
+        results,
+        openings: (projectData.openings || []).map((o: { width?: number; height?: number; offset?: number; wall?: number }) => ({
+          width: o.width ?? 0,
+          height: o.height ?? 0,
+          ...(typeof o.offset === 'number' && Number.isFinite(o.offset) ? { offset: o.offset } : {}),
+          ...(o.wall != null ? { wall: o.wall as 1 | 2 | 3 } : {}),
+        })),
+        type: 'walls_3' as const,
+        pdfComment: pdfComment.trim() || undefined,
+      }
+      const pdfBytes = await generatePdfWithPlanCapture('walls_3', payload)
+
+      const dateStr = formatDate(new Date())
+      const projectNameForPdf = (projectName.trim() || projectData.name || 'Проект')
+      const filename = `${projectNameForPdf}_${dateStr}.pdf`
+
+      // Конвертируем bytes в base64 для сохранения в sessionStorage
+      function uint8ArrayToBase64(bytes: Uint8Array): string {
+        let binary = ''
+        const len = bytes.byteLength
+        for (let i = 0; i < len; i++) {
+          binary += String.fromCharCode(bytes[i])
+        }
+        return btoa(binary)
+      }
+      
+      const base64Data = uint8ArrayToBase64(pdfBytes)
+      
+      if (Capacitor.isNativePlatform()) {
+        // На Android сохраняем PDF на устройство
+        const { savePdfToDevice } = await import('@/lib/pdf/pdfStorage')
+        const result = await savePdfToDevice(filename, pdfBytes)
+        if (!result) {
+          throw new Error('Не удалось сохранить PDF')
+        }
+        
+        const uri = typeof result === 'string' ? result : result.uri
+        const filePath = typeof result === 'string' ? undefined : result.path
+        
+        sessionStorage.setItem('pdfViewerUri', uri)
+        sessionStorage.setItem('pdfViewerFilename', filename)
+        if (filePath) {
+          sessionStorage.setItem('pdfViewerFilePath', filePath)
+        }
+        sessionStorage.setItem('pdfViewerPdfBytes', base64Data)
+        sessionStorage.setItem('pdfViewerPdfData', JSON.stringify({ 
+          projectName: projectName.trim() || projectData.name || 'Проект строительства',
+          projectType: 'walls_3',
+          materialLabel,
+          principleLabel
+        }))
+        
+        setSavedPdfUri(uri)
+        router.push(`/pdf-viewer?uri=${encodeURIComponent(uri)}&filename=${encodeURIComponent(filename)}`)
+      } else {
+        // Для веб-версии используем blob URL
+        const blob = new Blob([pdfBytes as BlobPart], { type: 'application/pdf' })
+        const url = URL.createObjectURL(blob)
+        
+        sessionStorage.setItem('pdfViewerUri', url)
+        sessionStorage.setItem('pdfViewerFilename', filename)
+        sessionStorage.setItem('pdfViewerPdfBytes', base64Data)
+        sessionStorage.setItem('pdfViewerPdfData', JSON.stringify({ 
+          projectName: projectName.trim() || projectData.name || 'Проект строительства',
+          projectType: 'walls_3',
+          materialLabel,
+          principleLabel
+        }))
+        
+        setSavedPdfUri(url)
+        router.push(`/pdf-viewer?uri=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`)
+      }
+    } catch (error: unknown) {
+      console.error('Ошибка при создании PDF:', error)
+      setToast(error instanceof Error ? error.message : 'Не удалось создать PDF')
+      setTimeout(() => setToast(null), 3000)
+    }
+  }
+
+  const handleContinue = (section: 'foundation' | 'walls' | 'roof') => {
+    // Сохраняем название проекта в sessionStorage
+    if (projectName.trim()) {
+      sessionStorage.setItem('currentProjectName_walls_3', projectName.trim())
+    }
+    
+    // Переходим в соответствующий раздел
+    if (section === 'walls') {
+      router.push('/projects/create/walls-3/walls')
+    } else if (section === 'foundation') {
+      router.push('/projects/create/walls-3/foundation')
+    } else if (section === 'roof') {
+      router.push('/projects/create/walls-3/roof')
+    }
+  }
+
+  return (
+    <div className="flex min-h-screen flex-col bg-black font-sans text-white pt-safe">
+      <header className="border-b border-white/10">
+        <div className="mx-auto max-w-5xl px-4 py-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between gap-4">
+            <Link
+              href="/projects/create"
+              className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white hover:bg-white/15"
+            >
+              <ArrowLeft className="h-5 w-5" aria-label="Назад" />
+            </Link>
+            <h1 className="text-2xl font-bold truncate max-w-[70%]">Пристрой 3 стены</h1>
+            <div className="w-[88px]" />
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-10 sm:px-6 lg:px-8">
+        <h2 className="text-3xl font-bold leading-tight">Пристрой 3 стены</h2>
+        <p className="mt-1 max-w-2xl text-sm text-zinc-400">Введите название проекта и выберите раздел для работы</p>
+
+        <div className="mt-6">
+          <label className="block text-sm font-medium text-zinc-300 mb-2">Название проекта</label>
+          <input
+            type="text"
+            value={projectName}
+            onChange={(e) => setProjectName(e.target.value)}
+            placeholder="Введите название проекта"
+            className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+        </div>
+
+        <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <button
+            onClick={() => handleContinue('foundation')}
+            className="flex flex-col items-center gap-1.5 rounded-2xl bg-gradient-to-r from-green-500 to-emerald-600 px-5 py-5 text-base font-semibold text-white shadow-md transition-opacity hover:opacity-95"
+          >
+            <div className="flex items-center gap-2">
+              <Building2 className="h-6 w-6 shrink-0 text-white" />
+              <span>Фундамент</span>
+            </div>
+          </button>
+          <button
+            onClick={() => handleContinue('walls')}
+            className="flex flex-col items-center gap-1.5 rounded-2xl bg-gradient-to-r from-blue-500 to-purple-600 px-5 py-5 text-base font-semibold text-white shadow-md transition-opacity hover:opacity-95"
+          >
+            <div className="flex items-center gap-2">
+              <Box className="h-6 w-6 shrink-0 text-white" />
+              <span>Стены</span>
+            </div>
+          </button>
+          <button
+            onClick={() => handleContinue('roof')}
+            className="flex flex-col items-center gap-1.5 rounded-2xl bg-gradient-to-r from-orange-500 to-red-600 px-5 py-5 text-base font-semibold text-white shadow-md transition-opacity hover:opacity-95"
+          >
+            <div className="flex items-center gap-2">
+              <Home className="h-6 w-6 shrink-0 text-white" />
+              <span>Крыша</span>
+            </div>
+          </button>
+        </div>
+
+        <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
+          <h3 className="text-base font-semibold text-white">Дополнительно</h3>
+          <p className="mt-1 text-xs text-zinc-400">Комментарий попадёт в PDF, заметки — только для себя</p>
+          <div className="mt-3 space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-1">Комментарий в PDF</label>
+              <textarea
+                value={pdfComment}
+                onChange={(e) => {
+                  setPdfComment(e.target.value)
+                  sessionStorage.setItem('pdfComment_walls_3', e.target.value)
+                }}
+                inputMode="text"
+                autoComplete="off"
+                placeholder="Например: учесть запас 5% на отходы..."
+                className="w-full min-h-[80px] rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white placeholder:text-zinc-500 focus:border-white/20 focus:outline-none"
+                style={{ resize: 'vertical' }}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-1">Заметки (только для себя)</label>
+              <textarea
+                value={notes}
+                onChange={(e) => {
+                  setNotes(e.target.value)
+                  sessionStorage.setItem('notes_walls_3', e.target.value)
+                }}
+                inputMode="text"
+                autoComplete="off"
+                placeholder="Напоминания, контакты, даты..."
+                className="w-full min-h-[80px] rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white placeholder:text-zinc-500 focus:border-white/20 focus:outline-none"
+                style={{ resize: 'vertical' }}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-8 pt-6 border-t border-white/10">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <button
+              type="button"
+              onClick={openPdf}
+              disabled={!savedPdfUri}
+              className="inline-flex items-center justify-center gap-2 w-full rounded-xl px-6 py-4 text-base font-semibold transition-colors sm:flex-1 disabled:opacity-50 disabled:cursor-not-allowed bg-blue-600 text-white hover:bg-blue-500"
+            >
+              <Download className="h-5 w-5" />
+              Открыть PDF
+            </button>
+            <label className="inline-flex items-center gap-2 text-sm text-zinc-300">
+              <input
+                type="checkbox"
+                checked={includePdfMeta}
+                onChange={(e) => {
+                  setIncludePdfMeta(e.target.checked)
+                  sessionStorage.setItem('includePdfMeta_walls_3', String(e.target.checked))
+                }}
+                className="h-4 w-4 rounded border-white/20 bg-black/30 text-blue-500 focus:ring-2 focus:ring-blue-500/40"
+              />
+              Подписать PDF
+            </label>
+          </div>
+          {!savedPdfUri && (
+            <p className="mt-2 text-center text-sm text-zinc-400">Сохраните PDF с помощью иконки в шапке раздела Фундамент, Стены или Крыша</p>
+          )}
+        </div>
+      </main>
+
+      {toast && (
+        <div className="pointer-events-none fixed bottom-6 left-1/2 z-50 w-[min(92vw,560px)] -translate-x-1/2">
+          <div className="rounded-xl border border-white/10 bg-black/90 px-4 py-3 text-sm text-white shadow-lg">
+            {toast}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
