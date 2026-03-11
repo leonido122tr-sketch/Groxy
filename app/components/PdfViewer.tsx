@@ -363,7 +363,7 @@ export function PdfViewer({ pdfData, pdfUrl, filename, onClose, onShare }: PdfVi
 
   if (error) {
     return (
-      <div className="fixed inset-0 z-[99999] flex flex-col bg-zinc-900 pt-safe pb-safe pdf-overlay">
+      <div className="fixed inset-0 z-[99999] flex flex-col bg-[#0b0f14] pt-safe pb-safe pdf-overlay">
         <div className="flex items-center justify-between border-b border-zinc-700 bg-zinc-800 px-4 py-3">
         <h2 className="flex-1 truncate text-center text-base font-semibold text-white">
           {filename}
@@ -397,7 +397,7 @@ export function PdfViewer({ pdfData, pdfUrl, filename, onClose, onShare }: PdfVi
 
   if (!displayUrl || loading) {
     return (
-      <div className="fixed inset-0 z-[99999] flex flex-col bg-zinc-900 pt-safe pb-safe pdf-overlay">
+      <div className="fixed inset-0 z-[99999] flex flex-col bg-[#0b0f14] pt-safe pb-safe pdf-overlay">
         <div className="flex items-center justify-between border-b border-zinc-700 bg-zinc-800 px-4 py-3">
         <h2 className="flex-1 truncate text-center text-base font-semibold text-white">
           {filename}
@@ -427,7 +427,7 @@ export function PdfViewer({ pdfData, pdfUrl, filename, onClose, onShare }: PdfVi
   }
 
   return (
-    <div className="fixed inset-0 z-[99999] flex flex-col bg-zinc-900 pt-safe pb-safe pdf-overlay">
+    <div className="fixed inset-0 z-[99999] flex flex-col bg-[#0b0f14] pt-safe pb-safe pdf-overlay">
       {/* Header */}
       <div className="flex items-center justify-between gap-3 border-b border-zinc-700 bg-zinc-800 px-4 py-3">
         <h2 className="flex-1 truncate text-center text-base font-semibold text-white">
@@ -499,7 +499,7 @@ export function PdfViewer({ pdfData, pdfUrl, filename, onClose, onShare }: PdfVi
       </div>
 
       {/* PDF Content - одна страница или вертикальный список страниц */}
-      <div className="flex-1 overflow-auto bg-zinc-900">
+      <div className="flex-1 overflow-auto bg-[#0b0f14]">
         <div className="mx-auto w-full max-w-4xl p-3">
           {rendering && <p className="mb-2 text-center text-xs text-zinc-300">Отрисовка{multiPage ? ' страниц...' : ' страницы...'}</p>}
           {multiPage ? (

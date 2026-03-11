@@ -96,13 +96,13 @@ export function PlanDetailViewWalls2({ project, onOpeningsChange, onClose }: Pro
   const oy = DIMENSION_OFFSET + 20
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-zinc-900">
+    <div className="fixed inset-0 z-50 flex flex-col bg-[#0b0f14]">
       <header className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-3">
         <h2 className="text-lg font-semibold text-white">План (схема в масштабе)</h2>
         <button
           type="button"
           onClick={onClose}
-          className="rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white hover:bg-white/15"
+          className="android-btn-secondary text-sm font-medium"
         >
           Закрыть
         </button>

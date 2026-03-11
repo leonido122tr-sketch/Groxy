@@ -7,7 +7,10 @@ import { createClient, isSupabaseNetworkError } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { Alert } from '@/app/components/Alert'
-import { ArrowLeft } from 'lucide-react'
+import { PageLoader } from '@/app/components/PageLoader'
+import { AppPage, SurfaceCard } from '@/app/components/AppShell'
+import { BackButton } from '@/app/components/BackButton'
+import { BackIcon } from '@/app/components/AppIcons'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -164,48 +167,47 @@ export default function LoginPage() {
   }
 
   if (checkingAuth) {
-    return (
-      <div className="flex min-h-app pt-safe pb-safe items-center justify-center bg-black font-sans text-white">
-        <div className="flex flex-col items-center gap-4">
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-white/10 border-t-blue-500"></div>
-          <p className="text-zinc-400">Загрузка...</p>
-        </div>
-      </div>
-    );
+    return <PageLoader />
   }
 
   return (
-    <div className="relative flex min-h-app pt-safe pb-safe items-center justify-center overflow-hidden bg-black font-sans text-white">
-      {/* Background gradients */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute -top-40 -left-40 h-80 w-80 rounded-full bg-blue-500/10 blur-3xl"></div>
-        <div className="absolute -bottom-40 -right-40 h-80 w-80 rounded-full bg-purple-500/10 blur-3xl"></div>
-      </div>
+    <AppPage width="md" className="justify-center py-6">
+      <div className="space-y-4">
+        <SurfaceCard className="p-4">
+          <div className="flex items-center gap-4">
+            <div className="flex h-14 w-14 items-center justify-center rounded-[22px] bg-[#1a2230]">
+              <Image src="/logo.png" alt="Groxy" width={40} height={40} className="h-10 w-10 rounded-2xl object-contain" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-zinc-400">Вход в аккаунт</p>
+              <p className="mt-1 text-base font-semibold text-white">Groxy</p>
+              <p className="text-sm text-zinc-300">Доступ к проектам, знаниям и материалам</p>
+            </div>
+          </div>
+        </SurfaceCard>
 
-      <main className="relative z-10 w-full max-w-md px-6">
-        <div className="glass-strong rounded-3xl p-6 shadow-2xl">
-          {/* Header */}
-          <div className="mb-6 text-center">
-            <div className="mb-3 inline-flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl bg-white/5 ring-1 ring-white/10">
+        <SurfaceCard accent className="p-5">
+          <div className="mb-8 text-center">
+            <div className="mb-4 inline-flex h-16 w-16 items-center justify-center overflow-hidden rounded-[24px] bg-[#1a2230]">
               <Image src="/logo.png" alt="Groxy" width={56} height={56} className="h-12 w-12 object-contain" />
             </div>
-            <h1 className="text-3xl font-bold text-white">
+            <h1 className="text-2xl font-semibold tracking-[-0.03em] text-white">
               Вход в систему
             </h1>
-            <p className="mt-2 text-sm text-zinc-400">Войдите в свой аккаунт</p>
+            <p className="mt-2 text-sm leading-6 text-zinc-300">Войдите в аккаунт, чтобы продолжить работу с проектами и данными.</p>
           </div>
-        
+
           {error && (
             <div className="mb-6">
               <Alert variant="error">{error}</Alert>
             </div>
           )}
 
-          <form onSubmit={handleLogin} className="space-y-4">
+          <form onSubmit={handleLogin} className="space-y-5">
             <div>
               <label
                 htmlFor="email"
-                className="mb-2 block text-sm font-semibold text-zinc-200"
+                className="mb-2 block text-sm font-semibold tracking-[0.01em] text-zinc-100"
               >
                 Email
               </label>
@@ -215,22 +217,22 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-white placeholder:text-zinc-500 transition-all focus:border-blue-500/50 focus:bg-black/60 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="w-full rounded-2xl border border-white/10 bg-[#10161f] px-4 py-3.5 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 placeholder="your@email.com"
               />
             </div>
 
             <div>
-              <div className="mb-2 flex items-center justify-between">
+              <div className="mb-2 flex items-center justify-between gap-4">
                 <label
                   htmlFor="password"
-                  className="block text-sm font-semibold text-zinc-200"
+                  className="block text-sm font-semibold tracking-[0.01em] text-zinc-100"
                 >
                   Пароль
                 </label>
                 <Link
                   href="/forgot-password"
-                  className="text-xs font-medium text-blue-400 transition-colors hover:text-blue-300"
+                  className="text-xs font-medium text-cyan-300 transition-colors hover:text-cyan-200"
                 >
                   Забыли пароль?
                 </Link>
@@ -241,7 +243,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-white placeholder:text-zinc-500 transition-all focus:border-blue-500/50 focus:bg-black/60 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="w-full rounded-2xl border border-white/10 bg-[#10161f] px-4 py-3.5 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 placeholder="••••••••"
               />
             </div>
@@ -249,7 +251,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="btn-hover gradient-primary w-full rounded-xl px-4 py-3 font-semibold text-white shadow-glow disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex min-h-14 w-full items-center justify-center rounded-2xl bg-[#2f6fed] px-4 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
@@ -262,35 +264,36 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <div className="mt-6 space-y-4">
-            <p className="text-center text-sm text-zinc-400">
+          <div className="mt-8 space-y-4">
+            <p className="text-center text-sm text-zinc-300">
               Нет аккаунта?{' '}
               <Link
                 href="/register"
-                className="font-semibold text-blue-400 transition-colors hover:text-blue-300"
+                className="font-semibold text-cyan-300 transition-colors hover:text-cyan-200"
               >
                 Зарегистрироваться
               </Link>
             </p>
 
             <p className="text-center">
-              <Link
-                href="/"
-                className="inline-flex items-center gap-2 text-sm text-zinc-400 transition-colors hover:text-blue-400"
+              <BackButton
+                fallbackHref="/"
+                className="inline-flex items-center gap-2 text-sm text-zinc-300"
               >
-                <ArrowLeft className="h-4 w-4" />
+                <BackIcon className="h-4 w-4" />
                 На главную
-              </Link>
+              </BackButton>
             </p>
-            <p className="text-center">
-              <Link href="/privacy" className="text-sm text-zinc-500 hover:text-zinc-400">
-                Политика конфиденциальности
-              </Link>
+
+            <p className="text-center text-sm text-zinc-500">
+              <Link href="/privacy" className="hover:text-zinc-400">Политика конфиденциальности</Link>
+              {' · '}
+              <Link href="/terms" className="hover:text-zinc-400">Условия использования</Link>
             </p>
           </div>
-        </div>
-      </main>
-    </div>
+        </SurfaceCard>
+      </div>
+    </AppPage>
   )
 }
 

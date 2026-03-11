@@ -5,6 +5,15 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { Alert } from '@/app/components/Alert'
+import { AppPage, SurfaceCard } from '@/app/components/AppShell'
+import { BackButton } from '@/app/components/BackButton'
+import {
+  BackIcon,
+  IconBadge,
+  SignupIcon,
+  StackIcon,
+  VerifyIcon,
+} from '@/app/components/AppIcons'
 
 export default function RegisterPage() {
   const [email, setEmail] = useState('')
@@ -208,22 +217,39 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="relative flex min-h-app pt-safe pb-safe items-center justify-center overflow-hidden bg-black font-sans text-white">
-      {/* Background gradients */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute -top-40 -left-40 h-80 w-80 rounded-full bg-blue-500/10 blur-3xl"></div>
-        <div className="absolute -bottom-40 -right-40 h-80 w-80 rounded-full bg-purple-500/10 blur-3xl"></div>
-      </div>
-
-      <main className="relative z-10 w-full max-w-md px-6">
-        <div className="glass-strong rounded-3xl p-6 shadow-2xl">
-          <div className="mb-6 text-center">
-            <div className="mb-3 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-500 to-pink-600 shadow-glow-accent">
-              <svg className="h-7 w-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-              </svg>
+    <AppPage width="md" className="justify-center py-6">
+      <div className="space-y-4">
+        <div className="grid gap-3">
+          <SurfaceCard className="p-4">
+            <div className="flex items-start gap-3">
+              <IconBadge tone="violet" size="sm">
+                <SignupIcon className="h-5 w-5" />
+              </IconBadge>
+              <div>
+                <p className="text-sm font-semibold text-white">Новый аккаунт</p>
+                <p className="mt-1 text-sm leading-6 text-zinc-300">Создайте аккаунт, чтобы сохранять проекты и работать с данными в Groxy.</p>
+              </div>
             </div>
-            <h1 className="text-3xl font-bold text-white">
+          </SurfaceCard>
+          <SurfaceCard className="p-4">
+            <div className="flex items-start gap-3">
+              <IconBadge tone="blue" size="sm">
+                <StackIcon className="h-5 w-5" />
+              </IconBadge>
+              <div>
+                <p className="text-sm font-semibold text-white">Рабочая среда</p>
+                <p className="mt-1 text-sm leading-6 text-zinc-300">Проекты, расчёты, материалы и знания будут связаны внутри одной платформы.</p>
+              </div>
+            </div>
+          </SurfaceCard>
+        </div>
+
+        <SurfaceCard accent className="p-5">
+          <div className="mb-6 text-center">
+            <IconBadge tone="violet" size="lg" className="mb-3 inline-flex">
+              <VerifyIcon className="h-7 w-7" />
+            </IconBadge>
+            <h1 className="text-2xl font-semibold text-white">
               {step === 'register' ? 'Регистрация' : 'Подтверждение'}
             </h1>
             <p className="mt-2 text-sm text-zinc-400">
@@ -258,7 +284,7 @@ export default function RegisterPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  className="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-white placeholder:text-zinc-500 transition-all focus:border-purple-500/50 focus:bg-black/60 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                  className="w-full rounded-2xl border border-white/10 bg-[#10161f] px-4 py-3 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   placeholder="your@email.com"
                 />
               </div>
@@ -276,7 +302,7 @@ export default function RegisterPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-white placeholder:text-zinc-500 transition-all focus:border-purple-500/50 focus:bg-black/60 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                  className="w-full rounded-2xl border border-white/10 bg-[#10161f] px-4 py-3 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   placeholder="••••••••"
                 />
               </div>
@@ -294,7 +320,7 @@ export default function RegisterPage() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
-                  className="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-white placeholder:text-zinc-500 transition-all focus:border-purple-500/50 focus:bg-black/60 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                  className="w-full rounded-2xl border border-white/10 bg-[#10161f] px-4 py-3 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   placeholder="••••••••"
                 />
               </div>
@@ -302,7 +328,7 @@ export default function RegisterPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="btn-hover gradient-accent w-full rounded-xl px-4 py-3 font-semibold text-white shadow-glow-accent disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full rounded-2xl bg-[#2f6fed] px-4 py-3 font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? (
                   <span className="flex items-center justify-center gap-2">
@@ -316,7 +342,7 @@ export default function RegisterPage() {
             </form>
           ) : (
             <form onSubmit={handleVerifyCode} className="space-y-4">
-              <div className="rounded-xl bg-blue-500/10 border border-blue-500/20 p-4 text-sm text-blue-300">
+              <div className="rounded-2xl bg-[#1b2430] p-4 text-sm text-zinc-200">
                 <p>
                   Мы отправили код подтверждения на{' '}
                   <span className="font-semibold text-white">{email}</span>
@@ -340,7 +366,7 @@ export default function RegisterPage() {
                   onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
                   required
                   maxLength={6}
-                  className="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-center text-2xl tracking-widest text-white placeholder:text-zinc-500 transition-all focus:border-purple-500/50 focus:bg-black/60 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                  className="w-full rounded-2xl border border-white/10 bg-[#10161f] px-4 py-3 text-center text-2xl tracking-widest text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   placeholder="000000"
                   autoComplete="one-time-code"
                 />
@@ -349,7 +375,7 @@ export default function RegisterPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="btn-hover gradient-accent w-full rounded-xl px-4 py-3 font-semibold text-white shadow-glow-accent disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full rounded-2xl bg-[#2f6fed] px-4 py-3 font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? (
                   <span className="flex items-center justify-center gap-2">
@@ -365,7 +391,7 @@ export default function RegisterPage() {
                 type="button"
                 onClick={handleResendCode}
                 disabled={loading}
-                className="glass w-full rounded-xl px-4 py-3 text-sm font-semibold text-white transition-all hover:bg-white/15 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full rounded-2xl bg-[#141a22] px-4 py-3 text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Отправить код повторно
               </button>
@@ -390,32 +416,30 @@ export default function RegisterPage() {
               Уже есть аккаунт?{' '}
               <Link
                 href="/login"
-                className="font-semibold text-purple-400 transition-colors hover:text-purple-300"
+                className="font-semibold text-blue-300"
               >
                 Войти
               </Link>
             </p>
 
             <p className="text-center">
-              <Link
-                href="/"
-                className="inline-flex items-center gap-2 text-sm text-zinc-400 transition-colors hover:text-zinc-300"
+              <BackButton
+                fallbackHref="/"
+                className="inline-flex items-center gap-2 text-sm text-zinc-400"
               >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                </svg>
+                <BackIcon className="h-4 w-4" />
                 На главную
-              </Link>
+              </BackButton>
             </p>
-            <p className="text-center">
-              <Link href="/privacy" className="text-sm text-zinc-500 hover:text-zinc-400">
-                Политика конфиденциальности
-              </Link>
+            <p className="text-center text-sm text-zinc-500">
+              <Link href="/privacy" className="hover:text-zinc-400">Политика конфиденциальности</Link>
+              {' · '}
+              <Link href="/terms" className="hover:text-zinc-400">Условия использования</Link>
             </p>
           </div>
-        </div>
-      </main>
-    </div>
+        </SurfaceCard>
+      </div>
+    </AppPage>
   )
 }
 

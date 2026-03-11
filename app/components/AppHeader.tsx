@@ -3,49 +3,89 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
+import { DashboardIcon, ProfileIcon, ProjectsIcon } from './AppIcons'
 import { LogoutButton } from './LogoutButton'
 
 export function AppHeader() {
   const pathname = usePathname()
   const isDashboard = pathname === '/dashboard'
+  const isProjectsArea = pathname?.startsWith('/projects')
+  const isProjectLibrary = pathname === '/project'
+  const isProfile = pathname === '/profile/setup'
+  const locationLabel = isProjectsArea
+    ? 'Проекты'
+    : isDashboard
+      ? 'Центр управления'
+      : 'Платформа'
+  const navItemClass = (active: boolean) =>
+    `inline-flex min-h-12 min-w-12 items-center justify-center gap-2 rounded-2xl px-3 py-2.5 text-sm font-medium transition ${
+      active
+        ? 'bg-[#2f6fed] text-white shadow-[0_6px_18px_rgba(47,111,237,0.28)]'
+        : 'bg-[#1a2230] text-zinc-200'
+    }`
 
   return (
-    <header className="relative z-10 border-b border-white/10 bg-black/50 backdrop-blur-xl">
-      <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between">
+    <header className="sticky top-0 z-30 border-b border-white/8 bg-[rgba(16,22,31,0.92)] backdrop-blur-xl">
+      <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between gap-4">
           <Link
             href="/dashboard"
-            className="flex items-center gap-3 rounded-xl transition-colors hover:bg-white/5 -m-2 p-2"
+            className="-m-1 flex min-h-12 items-center gap-3 rounded-2xl p-1"
             aria-label="На главную"
           >
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/5 ring-1 ring-white/10 overflow-hidden">
+            <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-[#1a2230]">
               <Image
                 src="/logo.png"
                 alt="Groxy Logo"
                 width={32}
                 height={32}
-                className="h-9 w-9 object-contain rounded-full"
+                className="h-8 w-8 rounded-2xl object-contain"
                 priority
               />
             </div>
-            <h1 className="text-2xl font-bold text-white">
-              Groxy
-            </h1>
+            <div className="flex flex-col">
+              <h1 className="text-lg font-semibold tracking-[-0.02em] text-white sm:text-xl">
+                Groxy
+              </h1>
+              <span className="text-[0.68rem] font-medium uppercase tracking-[0.1em] text-zinc-400">
+                {locationLabel}
+              </span>
+            </div>
           </Link>
-          {isDashboard && (
-            <div className="flex items-center gap-3">
+
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
+              <Link
+                href="/dashboard"
+                className={navItemClass(isDashboard)}
+                aria-label="Панель"
+              >
+                <DashboardIcon className="h-4 w-4" />
+                <span className="hidden md:inline">Панель</span>
+              </Link>
+              <Link
+                href="/project"
+                className={navItemClass(isProjectLibrary || isProjectsArea)}
+                aria-label="Мои проекты"
+              >
+                <ProjectsIcon className="h-4 w-4" />
+                <span className="hidden md:inline">Мои проекты</span>
+              </Link>
+            </div>
+
+            {(isDashboard || isProfile) && (
               <Link
                 href="/profile/setup"
-                className="glass rounded-xl px-4 py-2 text-sm font-medium text-white transition-all hover:bg-white/15"
+                className={navItemClass(isProfile)}
+                aria-label="Профиль"
               >
-                <span className="hidden sm:inline">Профиль</span>
-                <svg className="h-5 w-5 sm:hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
+                <ProfileIcon className="h-4 w-4" />
+                <span className="hidden md:inline">Профиль</span>
               </Link>
-              <LogoutButton />
-            </div>
-          )}
+            )}
+
+            <LogoutButton />
+          </div>
         </div>
       </div>
     </header>

@@ -3,10 +3,11 @@
 import { useEffect, useRef, useState, Suspense } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { ArrowLeft } from 'lucide-react'
 import { getLocalProject, listLocalProjects, type LocalProject } from '@/lib/projects/localProjects'
 import { listDeviceProjects } from '@/lib/projects/deviceProjects'
 import { Capacitor } from '@capacitor/core'
+import { BackButton } from '@/app/components/BackButton'
+import { BackIcon } from '@/app/components/AppIcons'
 
 function Demo3DContent() {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -365,15 +366,15 @@ function Demo3DContent() {
     : 'Демо 3D · 5×5 м, 2,7 м'
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-black">
-      <header className="absolute left-0 right-0 top-0 z-10 flex items-center justify-between border-b border-white/10 bg-black/70 px-4 py-3 backdrop-blur-sm">
-        <Link
-          href="/project"
-          className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-sm font-medium text-white hover:bg-white/15"
+    <div className="fixed inset-0 flex flex-col bg-[#0b0f14]">
+      <header className="absolute left-0 right-0 top-0 z-10 flex items-center justify-between border-b border-white/8 bg-[rgba(16,22,31,0.92)] px-4 py-3 backdrop-blur-xl">
+        <BackButton
+          fallbackHref="/project"
+          className="inline-flex min-h-12 items-center gap-2 rounded-2xl bg-[#1a2230] px-3 py-2.5 text-sm font-medium text-white"
         >
-          <ArrowLeft className="h-5 w-5" />
+          <BackIcon className="h-5 w-5" />
           Назад
-        </Link>
+        </BackButton>
         <span className="text-sm text-zinc-400">{subtitle}</span>
       </header>
       <div ref={containerRef} className="min-h-0 flex-1" />

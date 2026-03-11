@@ -4,9 +4,11 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { createClient, isSupabaseNetworkError } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, KeyRound } from 'lucide-react'
 import { PageLoader } from '@/app/components/PageLoader'
 import { Alert } from '@/app/components/Alert'
+import { AppPage, SurfaceCard } from '@/app/components/AppShell'
+import { BackButton } from '@/app/components/BackButton'
+import { BackIcon, IconBadge, KeyIcon } from '@/app/components/AppIcons'
 
 export default function ResetPasswordPage() {
   const [password, setPassword] = useState('')
@@ -103,41 +105,29 @@ export default function ResetPasswordPage() {
 
   if (error && !success) {
     return (
-      <div className="relative flex min-h-app pt-safe pb-safe items-center justify-center overflow-hidden bg-black font-sans text-white">
-        <div className="absolute inset-0 overflow-hidden">
-          <div className="absolute -top-40 -left-40 h-80 w-80 rounded-full bg-blue-500/10 blur-3xl" />
-          <div className="absolute -bottom-40 -right-40 h-80 w-80 rounded-full bg-purple-500/10 blur-3xl" />
-        </div>
-        <main className="relative z-10 w-full max-w-md px-6">
-          <div className="glass-strong rounded-3xl p-6 shadow-2xl">
-            <div className="mb-3 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/20">
-              <KeyRound className="h-7 w-7 text-red-400" />
+      <AppPage width="md" className="justify-center py-6">
+        <SurfaceCard className="p-5">
+            <div className="mb-3 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-[#2a1820]">
+              <KeyIcon className="h-7 w-7 text-red-400" />
             </div>
-            <h1 className="heading-page mb-6">Ошибка</h1>
+            <h1 className="mb-6 text-2xl font-semibold text-white">Ошибка</h1>
             <Alert variant="error">{error}</Alert>
             <p className="mt-4 text-center text-sm text-zinc-400">
               Перенаправление на страницу восстановления пароля...
             </p>
-          </div>
-        </main>
-      </div>
+        </SurfaceCard>
+      </AppPage>
     )
   }
 
   return (
-    <div className="relative flex min-h-app pt-safe pb-safe items-center justify-center overflow-hidden bg-black font-sans text-white">
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute -top-40 -left-40 h-80 w-80 rounded-full bg-blue-500/10 blur-3xl" />
-        <div className="absolute -bottom-40 -right-40 h-80 w-80 rounded-full bg-purple-500/10 blur-3xl" />
-      </div>
-
-      <main className="relative z-10 w-full max-w-md px-6">
-        <div className="glass-strong rounded-3xl p-6 shadow-2xl">
+    <AppPage width="md" className="justify-center py-6">
+      <SurfaceCard accent className="p-5">
           <div className="mb-6 text-center">
-            <div className="mb-3 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 shadow-glow">
-              <KeyRound className="h-7 w-7 text-white" />
-            </div>
-            <h1 className="heading-page">Новый пароль</h1>
+            <IconBadge tone="blue" size="lg" className="mb-3 inline-flex">
+              <KeyIcon className="h-7 w-7" />
+            </IconBadge>
+            <h1 className="text-2xl font-semibold text-white">Новый пароль</h1>
             <p className="mt-2 text-sm text-zinc-400">
               {success ? 'Пароль изменён' : 'Введите новый пароль для вашего аккаунта'}
             </p>
@@ -208,16 +198,15 @@ export default function ResetPasswordPage() {
           )}
 
           <p className="mt-6 text-center">
-            <Link
-              href="/login"
-              className="inline-flex items-center gap-2 text-sm font-medium text-blue-400 transition-colors hover:text-blue-300"
+            <BackButton
+              fallbackHref="/login"
+              className="inline-flex items-center gap-2 text-sm font-medium text-blue-300"
             >
-              <ArrowLeft className="h-4 w-4" />
+              <BackIcon className="h-4 w-4" />
               Вернуться к входу
-            </Link>
+            </BackButton>
           </p>
-        </div>
-      </main>
-    </div>
+      </SurfaceCard>
+    </AppPage>
   )
 }

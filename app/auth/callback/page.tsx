@@ -12,7 +12,22 @@ export default function AuthCallbackPage() {
     const checkAuth = async () => {
       try {
         const supabase = createClient()
-        
+
+        // OAuth PKCE: обмен code на сессию (Google и др.)
+        if (typeof window !== 'undefined') {
+          const url = new URL(window.location.href)
+          if (url.searchParams.get('code')) {
+            const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(window.location.href)
+            if (exchangeError) {
+              console.error('OAuth exchange error:', exchangeError)
+              setError(exchangeError.message || 'Не удалось завершить вход через Google.')
+              setTimeout(() => router.push('/login'), 2500)
+              return
+            }
+            window.history.replaceState({}, document.title, window.location.pathname)
+          }
+        }
+
         // Обрабатываем сессию из URL (для OAuth callback)
         const { error: sessionError } = await supabase.auth.getSession()
         
@@ -52,6 +67,23 @@ export default function AuthCallbackPage() {
         }
 
         if (user) {
+          // Профиль для OAuth (Google): upsert при первом входе
+          try {
+            await supabase.from('profiles').upsert(
+              {
+                идентификатор: user.id,
+                электронная_почта: user.email ?? '',
+                отображаемое_имя:
+                  (user.user_metadata?.full_name as string | undefined)?.trim() ||
+                  (user.user_metadata?.name as string | undefined)?.trim() ||
+                  null,
+                обновлено_в: new Date().toISOString(),
+              },
+              { onConflict: 'идентификатор' }
+            )
+          } catch (profileErr) {
+            console.warn('Profile upsert after OAuth:', profileErr)
+          }
           // Небольшая задержка для стабилизации состояния
           setTimeout(() => {
             router.push('/dashboard')

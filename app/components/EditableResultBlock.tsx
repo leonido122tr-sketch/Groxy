@@ -34,9 +34,18 @@ type Props = {
   unit: 'м²' | 'м³' | 'м'
   onOverride: (value: number | undefined) => void
   className?: string
+  plain?: boolean
 }
 
-export function EditableResultBlock({ label, calculatedValue, overrideValue, unit, onOverride, className = '' }: Props) {
+export function EditableResultBlock({
+  label,
+  calculatedValue,
+  overrideValue,
+  unit,
+  onOverride,
+  className = '',
+  plain = false,
+}: Props) {
   const effective = overrideValue ?? calculatedValue
   const [editing, setEditing] = useState(false)
   const [inputValue, setInputValue] = useState('')
@@ -49,14 +58,14 @@ export function EditableResultBlock({ label, calculatedValue, overrideValue, uni
   }
 
   return (
-    <div className={`rounded-xl border border-white/10 bg-white/5 p-5 ${className}`}>
+    <div className={`${plain ? '' : 'rounded-2xl bg-[#141a22] p-4'} ${className}`}>
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm text-zinc-400">{label}</p>
         {overrideValue != null && (
           <button
             type="button"
             onClick={() => onOverride(undefined)}
-            className="text-xs text-blue-400 hover:text-blue-300"
+            className="text-xs text-blue-300"
           >
             Сбросить к расчёту
           </button>
@@ -71,7 +80,9 @@ export function EditableResultBlock({ label, calculatedValue, overrideValue, uni
             onChange={(e) => setInputValue(sanitizeRuDecimalInput(e.target.value))}
             onBlur={commit}
             onKeyDown={(e) => { if (e.key === 'Enter') commit() }}
-            className="w-32 rounded-lg border border-white/20 bg-black/30 px-3 py-2 text-2xl font-bold text-white"
+            className={plain
+              ? 'android-field w-32 px-3 py-2 text-2xl font-bold'
+              : 'w-32 rounded-xl border border-white/10 bg-[#10161f] px-3 py-2 text-2xl font-bold text-white'}
             autoFocus
           />
           <span className="text-2xl font-semibold text-white">{unit}</span>
@@ -85,7 +96,7 @@ export function EditableResultBlock({ label, calculatedValue, overrideValue, uni
           }}
           className="mt-1 flex items-center gap-2 text-left"
         >
-          <p className="text-4xl font-bold text-white">
+          <p className="text-3xl font-semibold text-white">
             {effective.toFixed(2).replace('.', ',')} <span className="text-2xl font-semibold">{unit}</span>
           </p>
           <Pencil className="h-4 w-4 shrink-0 text-zinc-400 hover:text-white" />

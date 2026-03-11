@@ -5,6 +5,9 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { Alert } from '@/app/components/Alert'
+import { AppPage, SurfaceCard } from '@/app/components/AppShell'
+import { BackButton } from '@/app/components/BackButton'
+import { BackIcon, IconBadge, KeyIcon } from '@/app/components/AppIcons'
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
@@ -63,22 +66,13 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="relative flex min-h-app pt-safe pb-safe items-center justify-center overflow-hidden bg-black font-sans text-white">
-      {/* Background gradients */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute -top-40 -left-40 h-80 w-80 rounded-full bg-blue-500/10 blur-3xl"></div>
-        <div className="absolute -bottom-40 -right-40 h-80 w-80 rounded-full bg-purple-500/10 blur-3xl"></div>
-      </div>
-
-      <main className="relative z-10 w-full max-w-md px-6">
-        <div className="glass-strong rounded-3xl p-6 shadow-2xl">
+    <AppPage width="md" className="justify-center py-6">
+      <SurfaceCard accent className="p-5">
           <div className="mb-6 text-center">
-            <div className="mb-3 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-500 to-pink-600 shadow-glow-accent">
-              <svg className="h-7 w-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-              </svg>
-            </div>
-            <h1 className="text-3xl font-bold text-white">
+            <IconBadge tone="blue" size="lg" className="mb-3 inline-flex">
+              <KeyIcon className="h-7 w-7" />
+            </IconBadge>
+            <h1 className="text-2xl font-semibold text-white">
               Восстановление пароля
             </h1>
             <p className="mt-2 text-sm text-zinc-400">
@@ -129,7 +123,7 @@ export default function ForgotPasswordPage() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
-                    className="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-white placeholder:text-zinc-500 transition-all focus:border-purple-500/50 focus:bg-black/60 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                    className="w-full rounded-2xl border border-white/10 bg-[#10161f] px-4 py-3 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     placeholder="your@email.com"
                   />
                 </div>
@@ -137,7 +131,7 @@ export default function ForgotPasswordPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="btn-hover gradient-accent w-full rounded-xl px-4 py-3 font-semibold text-white shadow-glow-accent disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full rounded-2xl bg-[#2f6fed] px-4 py-3 font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {loading ? (
                     <span className="flex items-center justify-center gap-2">
@@ -154,7 +148,7 @@ export default function ForgotPasswordPage() {
                 Вспомнили пароль?{' '}
                 <Link
                   href="/login"
-                  className="font-semibold text-purple-400 transition-colors hover:text-purple-300"
+                  className="font-semibold text-blue-300"
                 >
                   Войти
                 </Link>
@@ -163,19 +157,16 @@ export default function ForgotPasswordPage() {
           )}
 
           <p className="mt-4 text-center">
-            <Link
-              href="/"
-              className="inline-flex items-center gap-2 text-sm text-zinc-400 transition-colors hover:text-zinc-300"
+            <BackButton
+              fallbackHref="/login"
+              className="inline-flex items-center gap-2 text-sm text-zinc-400"
             >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
+                <BackIcon className="h-4 w-4" />
               На главную
-            </Link>
+            </BackButton>
           </p>
-        </div>
-      </main>
-    </div>
+      </SurfaceCard>
+    </AppPage>
   )
 }
 

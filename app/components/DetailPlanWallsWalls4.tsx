@@ -52,7 +52,9 @@ export function DetailPlanWallsWalls4({ project, onOpeningsChange, onClose, embe
   const dragRef = useRef<{ index: number; startX: number; startY: number; startOffset: number; wall: 1 | 2 | 3 | 4; startCursorAlongWall: number } | null>(null)
   const openingsRef = useRef(openings)
   const onOpeningsChangeRef = useRef(onOpeningsChange)
-  onOpeningsChangeRef.current = onOpeningsChange
+  useEffect(() => {
+    onOpeningsChangeRef.current = onOpeningsChange
+  }, [onOpeningsChange])
   const [dragState, setDragState] = useState<{ index: number; wall: 1 | 2 | 3 | 4; offset: number } | null>(null)
   useEffect(() => {
     openingsRef.current = openings
@@ -326,7 +328,7 @@ export function DetailPlanWallsWalls4({ project, onOpeningsChange, onClose, embe
     const preferredWall = wallsOn.includes(curWall) ? curWall : wallsOn[0]
     if (preferredWall == null) return
 
-    let newWall = preferredWall
+    const newWall = preferredWall
     let newOffset = startOffset
     if (newWall === 1) {
       const curCursor = contentX / px

@@ -3,9 +3,16 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { FileText, Trash2, Smartphone, Monitor, FolderOpen } from 'lucide-react'
 import { ConfirmModal } from '@/app/components/Modal'
 import { Alert } from '@/app/components/Alert'
+import {
+  AndroidIcon,
+  DeleteIcon,
+  IconBadge,
+  PdfIcon,
+  ProjectsIcon,
+  WebIcon,
+} from '@/app/components/AppIcons'
 import { type LocalProject, listLocalProjects, deleteLocalProject, upsertLocalProject } from '@/lib/projects/localProjects'
 import { deleteDeviceProject, listDeviceProjects, saveProjectToDevice } from '@/lib/projects/deviceProjects'
 import { Capacitor } from '@capacitor/core'
@@ -425,12 +432,12 @@ export function LocalProjectsList() {
             onClose={() => setPdfViewerData(null)}
           />
         )}
-        <div className="mt-4 rounded-2xl border border-dashed border-white/15 bg-white/5 p-8 text-center">
-          <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-xl bg-white/5">
-            <FolderOpen className="h-8 w-8 text-zinc-500" />
-          </div>
-          <p className="text-base font-semibold text-white">Проекты не найдены</p>
-          <p className="mt-1 text-sm text-zinc-400">Создайте свой первый проект, чтобы начать работу</p>
+        <div className="rounded-[24px] bg-[#141a22] p-6 text-center shadow-[0_8px_24px_rgba(0,0,0,0.2)]">
+          <IconBadge tone="neutral" size="lg" className="mx-auto mb-3">
+            <ProjectsIcon className="h-8 w-8 text-zinc-300" />
+          </IconBadge>
+          <p className="text-base font-semibold text-white">Проектов пока нет</p>
+          <p className="mt-1 text-sm text-zinc-300">Создайте первый проект, чтобы начать работу в Groxy.</p>
         </div>
       </>
     )
@@ -446,19 +453,19 @@ export function LocalProjectsList() {
           onClose={() => setPdfViewerData(null)}
         />
       )}
-      <div className="mt-4">
-        <div className="mb-3 flex items-center justify-between">
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
           <h3 className="text-lg font-semibold text-white">Все проекты</h3>
-          <span className="glass rounded-lg px-3 py-1 text-sm font-medium text-zinc-300">
+          <span className="rounded-full bg-[#1b2430] px-3 py-1 text-sm font-medium text-zinc-300">
             {allProjects.length} {allProjects.length === 1 ? 'проект' : allProjects.length < 5 ? 'проекта' : 'проектов'}
           </span>
         </div>
         {deviceError && (
-          <div className="mb-4">
+          <div>
             <Alert variant="error">{deviceError}</Alert>
           </div>
         )}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="space-y-3">
           {allProjects.map((p) => {
             const results = calculateResults(p)
             const foundationVol = getFoundationVolume(p)
@@ -472,51 +479,55 @@ export function LocalProjectsList() {
             return (
               <div
                 key={p.id}
-                className="group glass-strong rounded-2xl p-4 transition-all hover:bg-white/10 hover:shadow-xl"
+                className="rounded-[24px] bg-[#141a22] p-4 shadow-[0_8px_24px_rgba(0,0,0,0.2)]"
               >
                 <Link href={`/projects/view?id=${encodeURIComponent(p.id)}`} className="block">
                   <div className="mb-3 flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
-                      <h4 className="min-w-0 flex-1 font-semibold text-white group-hover:text-blue-400 transition-colors line-clamp-1">
+                      <h4 className="min-w-0 flex-1 text-base font-semibold text-white line-clamp-1">
                         {p.name}
                       </h4>
-                      <p className="mt-1 text-xs font-medium text-zinc-300">
+                      <p className="mt-1 text-xs font-medium text-zinc-400">
                         {projectTypeLabel(p)}
                       </p>
                     </div>
-                    {p.platform === 'android' ? (
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-green-500/20" title="Создан на Android">
-                        <Smartphone className="h-4 w-4 text-green-400" />
-                      </div>
-                    ) : (
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/20" title="Создан в веб-версии">
-                        <Monitor className="h-4 w-4 text-blue-400" />
-                      </div>
-                    )}
                   </div>
 
                   {stats.length > 0 ? (
-                    <div className="mb-2 space-y-1 text-sm font-medium text-white">
+                    <div className="mb-3 space-y-1 text-sm text-zinc-200">
                       {stats.map((s) => (
                         <p key={s}>{s}</p>
                       ))}
                     </div>
                   ) : (
-                    <p className="mb-2 text-sm text-zinc-500">Нет заполненных разделов</p>
+                    <p className="mb-3 text-sm text-zinc-400">Нет заполненных разделов</p>
                   )}
 
-                  <p className="text-xs text-zinc-500">
-                    Обновлено: {new Date(p.updatedAt).toLocaleString('ru-RU', {
-                      day: 'numeric',
-                      month: 'short',
-                      year: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })}
-                  </p>
+                  <div className="flex items-center justify-between gap-3 text-xs text-zinc-500">
+                    <p>
+                      Обновлено: {new Date(p.updatedAt).toLocaleString('ru-RU', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </p>
+                    {p.platform === 'android' ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/12 px-2 py-1 text-[11px] text-emerald-300" title="Создан на Android">
+                        <AndroidIcon className="h-3.5 w-3.5" />
+                        Android
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/12 px-2 py-1 text-[11px] text-blue-300" title="Создан в веб-версии">
+                        <WebIcon className="h-3.5 w-3.5" />
+                        Web
+                      </span>
+                    )}
+                  </div>
                 </Link>
 
-                <div className="mt-3 flex items-center gap-2 border-t border-white/5 pt-3">
+                <div className="mt-4 grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={(e) => {
@@ -525,14 +536,14 @@ export function LocalProjectsList() {
                       void openPdfFromCard(p)
                     }}
                     disabled={loading === p.id}
-                    className="btn-hover flex flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-[#2f6fed] px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                     title="Открыть PDF"
                   >
                     {loading === p.id ? (
                       <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white"></div>
                     ) : (
                       <>
-                        <FileText className="h-4 w-4" />
+                        <PdfIcon className="h-4 w-4" />
                         <span>PDF</span>
                       </>
                     )}
@@ -545,10 +556,11 @@ export function LocalProjectsList() {
                       handleDeleteClick(p)
                     }}
                     disabled={loading === p.id}
-                    className="btn-hover flex items-center justify-center rounded-xl bg-red-500/20 px-3 py-2.5 text-xs font-semibold text-red-400 hover:bg-red-500 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-[#2a1820] px-3 py-2.5 text-sm font-semibold text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
                     title="Удалить проект"
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <DeleteIcon className="h-4 w-4" />
+                    <span>Удалить</span>
                   </button>
                 </div>
               </div>

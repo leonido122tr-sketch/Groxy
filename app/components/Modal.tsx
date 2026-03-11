@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
+import { useAndroidBackHandler } from '@/app/components/BackButton'
 
 type ModalProps = {
   isOpen: boolean
@@ -18,6 +19,8 @@ export function Modal({
   children,
   closeLabel = 'Закрыть',
 }: ModalProps) {
+  useAndroidBackHandler(onClose, isOpen)
+
   useEffect(() => {
     if (!isOpen) return
     const handleEscape = (e: KeyboardEvent) => {
@@ -38,12 +41,12 @@ export function Modal({
         onClick={onClose}
       />
       <div
-        className="relative z-10 mx-auto w-full max-w-md rounded-2xl border border-white/10 bg-zinc-900 p-6 shadow-xl animate-in fade-in zoom-in duration-200"
+        className="relative z-10 mx-auto w-full max-w-md rounded-[28px] border border-white/12 bg-[linear-gradient(180deg,rgba(24,24,27,0.96),rgba(9,9,11,0.96))] p-6 shadow-[0_28px_90px_rgba(0,0,0,0.55)] animate-in fade-in zoom-in duration-200"
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
       >
-        <h2 id="modal-title" className="mb-4 text-xl font-semibold text-white">
+        <h2 id="modal-title" className="mb-4 text-xl font-semibold tracking-[-0.03em] text-white">
           {title}
         </h2>
         {children}
@@ -75,17 +78,17 @@ export function ConfirmModal({
 }: ConfirmModalProps) {
   const confirmClass =
     variant === 'danger'
-      ? 'flex-1 rounded-xl bg-red-600 px-4 py-3 text-base font-semibold text-white hover:bg-red-700'
-      : 'flex-1 rounded-xl bg-blue-600 px-4 py-3 text-base font-semibold text-white hover:bg-blue-700'
+      ? 'flex-1 rounded-2xl bg-red-600 px-4 py-3 text-base font-semibold text-white hover:bg-red-700'
+      : 'flex-1 rounded-2xl bg-blue-600 px-4 py-3 text-base font-semibold text-white hover:bg-blue-700'
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title}>
-      <p className="mb-6 text-base text-zinc-300">{description}</p>
+      <p className="mb-6 text-base leading-7 text-zinc-300">{description}</p>
       <div className="flex gap-3">
         <button
           type="button"
           onClick={onClose}
-          className="glass flex-1 rounded-xl px-4 py-3 text-base font-semibold text-white transition-all hover:bg-white/15"
+          className="flex-1 rounded-2xl border border-white/12 bg-[#10161f] px-4 py-3 text-base font-semibold text-white transition hover:border-white/18 hover:bg-[#141a22]"
         >
           {cancelLabel}
         </button>

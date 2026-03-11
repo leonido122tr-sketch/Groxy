@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import Link from 'next/link'
+import { BackButton } from '@/app/components/BackButton'
+import { AppPage, SurfaceCard } from '@/app/components/AppShell'
 
 export default function TestConnectionPage() {
   const [status, setStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
@@ -36,9 +37,9 @@ export default function TestConnectionPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="w-full max-w-md rounded-lg bg-white p-8 shadow-lg dark:bg-zinc-900">
-        <h1 className="mb-6 text-3xl font-bold text-black dark:text-zinc-50">
+    <AppPage width="sm" className="justify-center py-6">
+      <SurfaceCard className="p-6">
+        <h1 className="mb-6 text-2xl font-semibold text-white">
           Тест подключения
         </h1>
 
@@ -46,34 +47,34 @@ export default function TestConnectionPage() {
           <button
             onClick={testConnection}
             disabled={status === 'testing'}
-            className="w-full rounded-lg bg-black px-4 py-2 font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+            className="btn-primary disabled:opacity-50"
           >
             {status === 'testing' ? 'Проверка...' : 'Проверить подключение'}
           </button>
 
           {message && (
             <div
-              className={`rounded-lg p-4 text-sm ${
+              className={`rounded-2xl p-4 text-sm ${
                 status === 'success'
-                  ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400'
+                  ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
                   : status === 'error'
-                  ? 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400'
-                  : 'bg-zinc-50 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
+                  ? 'border border-red-500/30 bg-red-500/10 text-red-200'
+                  : 'android-panel-soft text-zinc-300'
               }`}
             >
               {message}
             </div>
           )}
 
-          <div className="mt-6 rounded-lg bg-zinc-50 p-4 text-sm dark:bg-zinc-800">
-            <p className="mb-2 font-medium text-zinc-900 dark:text-zinc-50">
+          <div className="android-panel-soft mt-6 p-4 text-sm">
+            <p className="mb-2 font-medium text-white">
               Переменные окружения:
             </p>
-            <p className="text-zinc-600 dark:text-zinc-400">
+            <p className="text-zinc-400">
               NEXT_PUBLIC_SUPABASE_URL:{' '}
               {process.env.NEXT_PUBLIC_SUPABASE_URL ? '✅ Установлен' : '❌ Не установлен'}
             </p>
-            <p className="text-zinc-600 dark:text-zinc-400">
+            <p className="text-zinc-400">
               NEXT_PUBLIC_SUPABASE_ANON_KEY:{' '}
               {process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? '✅ Установлен' : '❌ Не установлен'}
             </p>
@@ -81,15 +82,15 @@ export default function TestConnectionPage() {
         </div>
 
         <p className="mt-6 text-center">
-          <Link
-            href="/"
-            className="text-sm text-zinc-600 hover:underline dark:text-zinc-400"
+          <BackButton
+            fallbackHref="/"
+            className="inline-flex min-h-12 items-center justify-center rounded-2xl px-3 text-sm text-zinc-300"
           >
             ← На главную
-          </Link>
+          </BackButton>
         </p>
-      </main>
-    </div>
+      </SurfaceCard>
+    </AppPage>
   )
 }
 

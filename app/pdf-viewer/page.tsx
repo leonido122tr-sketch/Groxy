@@ -3,11 +3,13 @@
 import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Capacitor } from '@capacitor/core'
-import { ArrowLeft } from 'lucide-react'
 import { PdfViewer } from '@/app/components/PdfViewer'
+import { BackIcon } from '@/app/components/AppIcons'
+import { useAndroidBackHandler, useSmartBack } from '@/app/components/BackButton'
 
 function PdfViewerContent() {
   const router = useRouter()
+  const smartBack = useSmartBack('/project')
   const searchParams = useSearchParams()
   const [pdfUri, setPdfUri] = useState<string | null>(null)
   // const [shareUri, setShareUri] = useState<string | null>(null) // Unused
@@ -22,9 +24,11 @@ function PdfViewerContent() {
     if (returnTo && returnTo.startsWith('/')) {
       router.push(returnTo)
     } else {
-      router.back()
+      smartBack()
     }
   }
+
+  useAndroidBackHandler(goBack)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -207,15 +211,15 @@ function PdfViewerContent() {
 
   if (error) {
     return (
-      <div className="flex min-h-screen flex-col bg-black font-sans text-white pt-safe">
-        <header className="border-b border-white/10">
+      <div className="flex min-h-screen flex-col bg-[#0b0f14] font-sans text-white pt-safe">
+        <header className="border-b border-white/8 bg-[#10161f]">
           <div className="mx-auto max-w-2xl px-4 py-4 sm:px-6">
             <button
               onClick={goBack}
-              className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white hover:bg-white/15"
+              className="inline-flex items-center gap-2 rounded-2xl bg-[#1a2230] px-4 py-2.5 text-sm font-medium text-white"
               aria-label="Назад"
             >
-              <ArrowLeft className="h-5 w-5" />
+              <BackIcon className="h-5 w-5" />
             </button>
           </div>
         </header>
@@ -229,15 +233,15 @@ function PdfViewerContent() {
 
   if (loading || !pdfUri) {
     return (
-      <div className="flex min-h-screen flex-col bg-black font-sans text-white pt-safe">
-        <header className="border-b border-white/10">
+      <div className="flex min-h-screen flex-col bg-[#0b0f14] font-sans text-white pt-safe">
+        <header className="border-b border-white/8 bg-[#10161f]">
           <div className="mx-auto max-w-2xl px-4 py-4 sm:px-6">
             <button
               onClick={goBack}
-              className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white hover:bg-white/15"
+              className="inline-flex items-center gap-2 rounded-2xl bg-[#1a2230] px-4 py-2.5 text-sm font-medium text-white"
               aria-label="Назад"
             >
-              <ArrowLeft className="h-5 w-5" />
+              <BackIcon className="h-5 w-5" />
             </button>
           </div>
         </header>
@@ -372,23 +376,23 @@ function PdfViewerContent() {
 
   // Для веб-версии используем стандартный подход
   return (
-    <div className="flex min-h-screen flex-col bg-black font-sans text-white pt-safe">
-      <header className="border-b border-white/10">
+    <div className="flex min-h-screen flex-col bg-[#0b0f14] font-sans text-white pt-safe">
+      <header className="border-b border-white/8 bg-[#10161f]">
         <div className="mx-auto w-full px-4 py-4 sm:px-6">
           <div className="flex items-center justify-between gap-3">
             <button
               onClick={goBack}
-              className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white hover:bg-white/15"
+              className="inline-flex items-center gap-2 rounded-2xl bg-[#1a2230] px-4 py-2.5 text-sm font-medium text-white"
               aria-label="Назад"
             >
-              <ArrowLeft className="h-5 w-5" />
+              <BackIcon className="h-5 w-5" />
             </button>
             <div className="flex items-center gap-3">
               <span className="text-sm text-zinc-400 truncate max-w-xs">{filename}</span>
               <button
                 type="button"
                 onClick={handleShare}
-                className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white hover:bg-white/15"
+                className="inline-flex items-center gap-2 rounded-2xl bg-[#1a2230] px-4 py-2.5 text-sm font-medium text-white"
               >
                 Поделиться
               </button>
@@ -413,7 +417,7 @@ export default function PdfViewerPage() {
   return (
     <Suspense fallback={
       <div className="flex min-h-screen flex-col bg-black font-sans text-white pt-safe">
-        <header className="border-b border-white/10">
+        <header className="border-b border-white/8 bg-[#10161f]">
           <div className="mx-auto max-w-2xl px-4 py-4 sm:px-6">
             <p className="text-zinc-400">Загрузка...</p>
           </div>

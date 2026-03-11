@@ -1,5 +1,6 @@
 import { createBrowserClient } from '@supabase/ssr'
 import { getSupabaseConfig } from '@/lib/config/supabase'
+import { getNativeAuthCookieMethods } from '@/lib/auth/nativeStorage'
 
 /** Сетевая ошибка при обращении к Supabase (нет связи, CORS, таймаут). Не меняем URL/ключи — только обрабатываем отказ сети. */
 export function isSupabaseNetworkError(err: unknown): boolean {
@@ -79,6 +80,12 @@ function getSupabaseKey(): string {
   return key
 }
 
+function isNativePlatform(): boolean {
+  if (typeof window === 'undefined') return false
+  const cap = (window as Window & { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor
+  return cap?.isNativePlatform?.() === true
+}
+
 export function createClient() {
   const url = getSupabaseUrl()
   const key = getSupabaseKey()
@@ -93,15 +100,26 @@ export function createClient() {
     })
     throw new Error(errorMsg)
   }
+
+  const authOptions = {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    flowType: 'pkce' as const,
+    lock: async <R>(_name: string, _acquireTimeout: number, fn: () => Promise<R>) => fn(),
+  }
+
+  if (typeof window !== 'undefined' && isNativePlatform()) {
+    return createBrowserClient(url, key, {
+      auth: authOptions,
+      cookies: getNativeAuthCookieMethods(),
+    })
+  }
   
   return createBrowserClient(url, key, {
     auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-      flowType: 'pkce',
+      ...authOptions,
       storage: typeof window !== 'undefined' ? window.localStorage : undefined,
-      lock: async <R>(_name: string, _acquireTimeout: number, fn: () => Promise<R>) => fn(),
     }
   })
 }

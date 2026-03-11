@@ -16,6 +16,7 @@ export type ForumTopic = {
   replies_count: number
   created_at: string
   updated_at: string
+  edited_at?: string | null
 }
 
 export type ForumPost = {

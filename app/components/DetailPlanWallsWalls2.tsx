@@ -55,7 +55,9 @@ export function DetailPlanWallsWalls2({ project, onOpeningsChange, onClose, embe
   const dragRef = useRef<{ index: number; startX: number; startY: number; startOffset: number; wall: 1 | 2; startCursorAlongWall: number } | null>(null)
   const openingsRef = useRef(openings)
   const onOpeningsChangeRef = useRef(onOpeningsChange)
-  onOpeningsChangeRef.current = onOpeningsChange
+  useEffect(() => {
+    onOpeningsChangeRef.current = onOpeningsChange
+  }, [onOpeningsChange])
   /** Во время перетаскивания — только эта позиция обновляется (для плавности), openings — при отпускании */
   const [dragState, setDragState] = useState<{ index: number; wall: 1 | 2; offset: number } | null>(null)
   useEffect(() => {

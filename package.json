@@ -1,6 +1,6 @@
 {
   "name": "app",
-  "version": "1.04",
+  "version": "1.06",
   "private": true,
   "scripts": {
     "dev": "cross-env NODE_OPTIONS=--max-old-space-size=4096 next dev --webpack",
@@ -8,20 +8,23 @@
     "dev:turbo": "cross-env NODE_OPTIONS=--max-old-space-size=4096 next dev --turbopack",
     "prebuild": "node scripts/inject-env.js && node scripts/sync-pdf-worker.js",
     "postinstall": "node scripts/sync-pdf-worker.js",
-    "build": "next build",
-    "build:webpack": "next build --webpack",
+    "build": "next build --webpack",
+    "build:turbo": "next build",
     "start": "next start",
     "serve": "npx --yes serve out -l 3000",
     "lint": "eslint",
-    "android:build": "npm run build:webpack && npx cap sync android",
+    "android:build": "npm run build && npx cap sync android",
     "android:run": "node scripts/android-install-run.js",
     "android:run:5556": "node scripts/android-install-run.js 5556"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.0",
     "@capacitor/app": "^8.0.0",
+    "@capacitor/browser": "^8.0.2",
     "@capacitor/core": "^8.0.0",
     "@capacitor/filesystem": "^8.0.0",
+    "@capacitor/inappbrowser": "^3.0.2",
+    "@capacitor/preferences": "^8.0.1",
     "@capacitor/share": "^8.0.0",
     "@capacitor/status-bar": "^8.0.0",
     "@capawesome-team/capacitor-file-opener": "^8.0.0",
@@ -57,6 +60,7 @@
     "dotenv": "^17.2.3",
     "eslint": "^9",
     "eslint-config-next": "16.1.1",
+    "sharp": "^0.34.5",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

@@ -1,15 +1,17 @@
 'use client'
 
 import Link from 'next/link'
+import { AppPage, SurfaceCard } from '@/app/components/AppShell'
 import { AppHeader } from '@/app/components/AppHeader'
+import { BackButton } from '@/app/components/BackButton'
+import { BackIcon } from '@/app/components/AppIcons'
 
 export default function PrivacyPage() {
   return (
-    <div className="relative flex min-h-screen flex-col overflow-hidden bg-black font-sans text-white pt-safe">
-      <AppHeader />
-      <main className="relative z-10 mx-auto w-full max-w-md flex-1 px-4 pt-3 pb-8 sm:px-6 lg:px-8">
-        <h1 className="text-2xl font-bold text-white">Политика конфиденциальности</h1>
-        <p className="mt-2 text-sm text-zinc-400">Обновлено: {new Date().toLocaleDateString('ru-RU')}</p>
+    <AppPage header={<AppHeader />} width="md" className="py-5">
+      <SurfaceCard className="p-5">
+        <h1 className="text-2xl font-semibold text-white">Политика конфиденциальности</h1>
+        <p className="mt-2 text-sm text-zinc-400">Обновлено: 02.03.2025</p>
 
         <section className="mt-6 space-y-4 text-sm text-zinc-300">
           <div>
@@ -71,15 +73,20 @@ export default function PrivacyPage() {
           <div>
             <h2 className="font-medium text-white">9. Контакты</h2>
             <p className="mt-1">
-              По вопросам обработки персональных данных и политики конфиденциальности обращайтесь к разработчику приложения — контакт указан в карточке приложения в магазине (Google Play / RuStore) или в разделе «О приложении» / настройках внутри приложения.
+              По вопросам обработки персональных данных и политики конфиденциальности обращайтесь к разработчику приложения. Электронная почта для обращений указана в описании приложения в Google Play (карточка приложения в магазине) и в разделе «Поддержка» внутри приложения.
             </p>
           </div>
         </section>
 
-        <Link href="/" className="mt-8 inline-block text-sm text-white/80 underline hover:text-white">
+        <p className="mt-6 text-sm text-zinc-400">
+          <Link href="/terms" className="text-zinc-300 hover:text-white">Условия использования</Link>
+        </p>
+
+        <BackButton fallbackHref="/" className="mt-8 inline-flex items-center gap-2 text-sm text-zinc-300">
+          <BackIcon className="h-4 w-4" />
           На главную
-        </Link>
-      </main>
-    </div>
+        </BackButton>
+      </SurfaceCard>
+    </AppPage>
   )
 }

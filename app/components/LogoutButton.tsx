@@ -1,6 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
+import { LogoutIcon } from './AppIcons'
 import { createClient } from '@/lib/supabase/client'
 
 export function LogoutButton() {
@@ -16,12 +17,11 @@ export function LogoutButton() {
   return (
     <button
       onClick={handleLogout}
-      className="flex items-center gap-2 rounded-xl bg-red-500/10 px-4 py-2 text-sm font-medium text-red-400 transition-all hover:bg-red-500 hover:text-white"
+      aria-label="Выйти"
+      className="inline-flex min-h-12 min-w-12 items-center justify-center gap-2 rounded-2xl bg-[#2a1820] px-3 py-2.5 text-sm font-medium text-red-200"
     >
-      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-      </svg>
-      <span className="hidden sm:inline">Выйти</span>
+      <LogoutIcon className="h-4 w-4" />
+      <span className="hidden md:inline">Выйти</span>
     </button>
   )
 }
