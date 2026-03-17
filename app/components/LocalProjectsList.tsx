@@ -13,8 +13,12 @@ import {
   ProjectsIcon,
   WebIcon,
 } from '@/app/components/AppIcons'
+import { createClient } from '@/lib/supabase/client'
 import { type LocalProject, listLocalProjects, deleteLocalProject, upsertLocalProject } from '@/lib/projects/localProjects'
 import { deleteDeviceProject, listDeviceProjects, saveProjectToDevice } from '@/lib/projects/deviceProjects'
+import { listSupabaseProjects, deleteSupabaseProject, isSupabaseProjectId } from '@/lib/projects/supabaseProjects'
+import { PROJECTS_LIMIT } from '@/lib/projects/projectsLimit'
+import { useAndroidBackHandler } from '@/app/components/BackButton'
 import { Capacitor } from '@capacitor/core'
 import { PdfViewer } from './PdfViewer'
 
@@ -143,38 +147,45 @@ export function LocalProjectsList() {
   const [deleteModalProject, setDeleteModalProject] = useState<LocalProject | null>(null)
   const [pdfViewerData, setPdfViewerData] = useState<{ pdfData?: string; pdfUrl?: string; filename: string } | null>(null)
 
+  useAndroidBackHandler(() => setPdfViewerData(null), !!pdfViewerData)
+
   const reload = async () => {
     const projects: LocalProject[] = []
-    
+
+    // Проекты из Supabase (для авторизованных)
+    try {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const supabaseProjects = await listSupabaseProjects(supabase)
+        projects.push(...supabaseProjects.map(p => ({ ...p, platform: p.platform || 'web' as const })))
+      }
+    } catch (e) {
+      console.warn('Supabase projects load:', e)
+    }
+
     // Загружаем проекты из localStorage (работает и в веб, и в Capacitor WebView)
     try {
       const localProjects = listLocalProjects()
       projects.push(...localProjects.map(p => ({ ...p, platform: p.platform || 'web' as const })))
-      
-      // ВАЖНО: на Android НЕ выполняем фоновую синхронизацию проектов на устройство.
-      // Проекты должны сохраняться только по явному действию пользователя.
     } catch (e) {
-      // localStorage недоступен (например, в SSR)
       console.log('localStorage недоступен:', e)
     }
-    
+
     // Загружаем проекты из памяти устройства (только на Android) с таймаутом
     try {
       const deviceProjectsPromise = listDeviceProjects()
-      const timeoutPromise = new Promise<LocalProject[]>((resolve) => 
-        setTimeout(() => resolve([]), 3000) // Таймаут 3 секунды
+      const timeoutPromise = new Promise<LocalProject[]>((resolve) =>
+        setTimeout(() => resolve([]), 3000)
       )
-      
       const deviceProjects = await Promise.race([deviceProjectsPromise, timeoutPromise])
       projects.push(...deviceProjects.map(p => ({ ...p, platform: p.platform || 'android' as const })))
-      // setDeviceAvailable(true) // Removed unused state update
       setDeviceError(null)
     } catch (e: unknown) {
-      // setDeviceAvailable(false) // Removed unused state update
       const message = e instanceof Error ? e.message : 'Не удалось прочитать память устройства'
       setDeviceError(message)
     }
-    
+
     // Убираем дубликаты по ID, оставляя более свежую версию
     const uniqueProjects = new Map<string, LocalProject>()
     for (const p of projects) {
@@ -405,7 +416,10 @@ export function LocalProjectsList() {
     setDeleteModalProject(null)
 
     try {
-      if (project.platform === 'android') {
+      if (isSupabaseProjectId(project.id)) {
+        const supabase = createClient()
+        await deleteSupabaseProject(supabase, project.id)
+      } else if (project.platform === 'android') {
         await deleteDeviceProject(project.id)
       } else {
         deleteLocalProject(project.id)
@@ -456,8 +470,8 @@ export function LocalProjectsList() {
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-lg font-semibold text-white">Все проекты</h3>
-          <span className="rounded-full bg-[#1b2430] px-3 py-1 text-sm font-medium text-zinc-300">
-            {allProjects.length} {allProjects.length === 1 ? 'проект' : allProjects.length < 5 ? 'проекта' : 'проектов'}
+          <span className={`rounded-full px-3 py-1 text-sm font-medium ${allProjects.length >= PROJECTS_LIMIT ? 'bg-amber-500/15 text-amber-400' : 'bg-[#1b2430] text-zinc-300'}`} title={`Лимит: ${PROJECTS_LIMIT} проектов`}>
+            {allProjects.length} / {PROJECTS_LIMIT} проектов
           </span>
         </div>
         {deviceError && (
@@ -572,18 +586,8 @@ export function LocalProjectsList() {
           isOpen={!!deleteModalProject}
           onClose={handleDeleteCancel}
           onConfirm={handleDeleteConfirm}
-          title="Удалить проект?"
-          description={
-            deleteModalProject ? (
-              <>
-                Вы уверены, что хотите удалить проект{' '}
-                <strong className="font-semibold text-white">{deleteModalProject.name}</strong>?{' '}
-                Это действие невозможно отменить.
-              </>
-            ) : (
-              ''
-            )
-          }
+          title={deleteModalProject ? `Удалить проект «${deleteModalProject.name}»?` : 'Удалить проект?'}
+          description={deleteModalProject ? 'Это действие нельзя отменить.' : ''}
           confirmLabel="Удалить"
           cancelLabel="Отмена"
           variant="danger"

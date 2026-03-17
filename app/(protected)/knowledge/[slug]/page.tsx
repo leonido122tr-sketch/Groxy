@@ -1,8 +1,8 @@
-import { KNOWLEDGE_SLUGS } from '@/lib/knowledge/constants'
+import { KNOWLEDGE_SLUGS_PREGENERATED } from '@/lib/knowledge/constants'
 import { KnowledgeTopicClient } from './KnowledgeTopicClient'
 
 export function generateStaticParams() {
-  return KNOWLEDGE_SLUGS.map((slug) => ({ slug }))
+  return KNOWLEDGE_SLUGS_PREGENERATED.map((slug) => ({ slug }))
 }
 
 export default async function KnowledgeTopicPage({

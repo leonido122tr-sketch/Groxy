@@ -5,13 +5,24 @@ const BUCKET = 'forum-images'
 const MAX_SIZE_BYTES = 5 * 1024 * 1024 // 5 MB — лимит исходного файла
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
 
-/** Целевой размер после сжатия (~1 МБ), макс. сторона 1200 px — экономия места в Storage */
-const COMPRESS_OPTIONS = {
-  maxSizeMB: 1,
-  maxWidthOrHeight: 1200,
-  useWebWorker: true,
-  initialQuality: 0.85,
-  fileType: 'image/jpeg' as const,
+/** На нативе (Android/iOS) Web Worker может быть недоступен — сжимаем в главном потоке */
+async function getCompressOptions(): Promise<Parameters<typeof imageCompression>[1]> {
+  let useWebWorker = true
+  if (typeof window !== 'undefined') {
+    try {
+      const { Capacitor } = await import('@capacitor/core')
+      if (Capacitor.isNativePlatform()) useWebWorker = false
+    } catch {
+      // Capacitor не подключён — веб, оставляем worker
+    }
+  }
+  return {
+    maxSizeMB: 1,
+    maxWidthOrHeight: 1200,
+    useWebWorker,
+    initialQuality: 0.85,
+    fileType: 'image/jpeg' as const,
+  }
 }
 
 function sanitizeFileName(name: string): string {
@@ -36,7 +47,8 @@ export async function uploadForumImage(
 
   let blob: File = file
   try {
-    blob = await imageCompression(file, COMPRESS_OPTIONS)
+    const options = await getCompressOptions()
+    blob = await imageCompression(file, options)
   } catch (e) {
     console.warn('Сжатие не удалось, загружаем исходный файл:', e)
   }

@@ -2,10 +2,10 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { StatusBarInit } from "./components/StatusBarInit";
-import { GlobalPdfViewerHost } from "./components/GlobalPdfViewerHost";
 import { SupabaseNetworkErrorHandler } from "./components/SupabaseNetworkErrorHandler";
 import { AuthDeepLinkHandler } from "./components/AuthDeepLinkHandler";
 import { NativeLaunchGate } from "./components/NativeLaunchGate";
+import { GlobalPdfViewerHostDynamic } from "./components/GlobalPdfViewerHostDynamic";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -47,7 +47,7 @@ export default function RootLayout({
         <SupabaseNetworkErrorHandler />
         <NativeLaunchGate>
           <AuthDeepLinkHandler />
-          <GlobalPdfViewerHost />
+          <GlobalPdfViewerHostDynamic />
           <div className="app-shell">
             <div className="app-scroll">{children}</div>
           </div>

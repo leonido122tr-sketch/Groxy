@@ -28,6 +28,8 @@ NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 
+**Supabase:** таблица `profiles` в этом проекте использует русские имена колонок; первичный ключ — **`идентификатор`** (не `id`). RLS и триггеры в Supabase должны ссылаться на `идентификатор`. Подробнее: `docs/SUPABASE_SCHEMA.md`.
+
 3. Запустите сервер разработки:
 ```bash
 npm run dev

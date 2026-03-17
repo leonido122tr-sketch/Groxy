@@ -48,3 +48,14 @@ export type ForumTopicWithAuthor = ForumTopic & {
 export type ForumPostWithAuthor = ForumPost & {
   author_email?: string
 }
+
+export type ForumNotification = {
+  id: string
+  user_id: string
+  topic_id: string
+  post_id: string
+  created_at: string
+  read: boolean
+  topic_title?: string
+  category_slug?: string
+}

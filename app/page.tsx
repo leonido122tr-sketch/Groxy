@@ -162,7 +162,7 @@ export default function Home() {
             <div className="absolute inset-0 bg-gradient-to-r from-[#121922]/95 via-[#121922]/75 to-[#121922]/50" aria-hidden />
             <div className="relative z-10 flex min-h-[88px] items-center gap-4 p-4">
               <div className="min-w-0 flex-1">
-                <span className="text-base font-medium text-white drop-shadow-sm">Поддержка</span>
+                <span className="text-base font-medium text-white drop-shadow-sm">Поддержка и сотрудничество</span>
                 <p className="mt-0.5 line-clamp-1 text-xs text-zinc-300">Написать о проблемах и пожеланиях</p>
               </div>
               <ForwardIcon className="h-5 w-5 shrink-0 text-zinc-400" />

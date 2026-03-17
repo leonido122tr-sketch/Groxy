@@ -66,3 +66,6 @@ export const KNOWLEDGE_PAGES: Record<
 }
 
 export const KNOWLEDGE_SLUGS = Object.keys(KNOWLEDGE_PAGES) as string[]
+
+/** Подмножество slug'ов для прегенерации при сборке. Остальные разделы открываются по клику; прямой URL/обновление могут дать 404. Чтобы прегенерировать все — используйте KNOWLEDGE_SLUGS. */
+export const KNOWLEDGE_SLUGS_PREGENERATED = KNOWLEDGE_SLUGS.slice(0, 6)

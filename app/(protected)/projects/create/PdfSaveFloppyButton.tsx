@@ -109,8 +109,8 @@ export function PdfSaveFloppyButton({ variant, onToast }: Props) {
         isOpen={showOverwriteModal}
         onClose={() => setShowOverwriteModal(false)}
         onConfirm={doSave}
-        title="Перезаписать PDF?"
-        description="В проекте есть изменения. Перезаписать сохранённый PDF?"
+        title="Перезаписать сохранённый PDF?"
+        description="Создать новый PDF по текущим данным и перезаписать ранее сохранённый файл?"
         confirmLabel="Перезаписать"
         cancelLabel="Отмена"
         variant="primary"

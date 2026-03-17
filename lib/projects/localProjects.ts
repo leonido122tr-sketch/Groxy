@@ -1,3 +1,5 @@
+import { PROJECTS_LIMIT } from './projectsLimit'
+
 export type Principle = 'inside' | 'outside'
 
 export type Opening = {
@@ -192,8 +194,12 @@ export function getLocalProject(id: string): LocalProject | null {
 export function upsertLocalProject(project: LocalProject) {
   const all = readAll()
   const idx = all.findIndex((p) => p.id === project.id)
-  if (idx >= 0) all[idx] = project
-  else all.unshift(project)
+  if (idx >= 0) {
+    all[idx] = project
+  } else {
+    if (all.length >= PROJECTS_LIMIT) return
+    all.unshift(project)
+  }
   writeAll(all)
 }
 

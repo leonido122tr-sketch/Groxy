@@ -17,6 +17,7 @@ import {
 
 export default function RegisterPage() {
   const [email, setEmail] = useState('')
+  const [login, setLogin] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [code, setCode] = useState('')
@@ -84,6 +85,12 @@ export default function RegisterPage() {
     setError(null)
     setSuccess(null)
 
+    // Валидация логина
+    if (!login.trim()) {
+      setError('Укажите логин')
+      return
+    }
+
     // Валидация email на клиенте
     if (!email.includes('@')) {
       setError('Пожалуйста, укажите символ "@" в email адресе')
@@ -108,7 +115,7 @@ export default function RegisterPage() {
         email,
         password,
         options: {
-          // Не делаем автоматический редирект, пользователь введет код в приложении
+          data: { full_name: login.trim() },
           emailRedirectTo: undefined
         }
       })
@@ -160,21 +167,29 @@ export default function RegisterPage() {
         throw error
       }
 
-      // Код подтвержден, регистрация завершена
-      // Пользователь автоматически авторизован после подтверждения кода
+      // Код подтвержден — сразу выставляем сессию, чтобы RLS при upsert в profiles видел auth.uid()
+      if (data?.session) {
+        await supabase.auth.setSession(data.session)
+      }
+
+      // Профиль: сначала upsert (почта и т.д.), затем RPC для имени — обход бага с кириллицей в имени колонки через API
       if (data?.user) {
+        const displayValue = login.trim() || null
         await supabase.from('profiles').upsert(
           {
             идентификатор: data.user.id,
             электронная_почта: data.user.email ?? '',
-            отображаемое_имя: data.user.user_metadata?.full_name ?? null,
             обновлено_в: new Date().toISOString(),
           },
           { onConflict: 'идентификатор' }
         )
+        const { error: nameErr } = await supabase.rpc('set_my_display_name', {
+          p_name: displayValue ?? '',
+        })
+        if (nameErr) console.error('Ошибка записи отображаемого имени:', nameErr)
       }
-      // Перенаправляем на страницу настройки профиля
-      router.push('/profile/setup')
+      // Перенаправляем в приложение (настройки профиля — по желанию)
+      router.push('/dashboard')
       router.refresh()
     } catch (error: unknown) {
       console.error('Полная ошибка проверки кода:', error)
@@ -271,6 +286,24 @@ export default function RegisterPage() {
 
           {step === 'register' ? (
             <form onSubmit={handleRegister} className="space-y-4">
+              <div>
+                <label
+                  htmlFor="login"
+                  className="mb-2 block text-sm font-semibold text-zinc-200"
+                >
+                  Логин
+                </label>
+                <input
+                  id="login"
+                  type="text"
+                  value={login}
+                  onChange={(e) => setLogin(e.target.value)}
+                  required
+                  className="w-full rounded-2xl border border-white/10 bg-[#10161f] px-4 py-3 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  placeholder="Как к вам обращаться"
+                />
+              </div>
+
               <div>
                 <label
                   htmlFor="email"

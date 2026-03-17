@@ -5,12 +5,24 @@ const BUCKET = 'avatars'
 const MAX_SIZE_BYTES = 3 * 1024 * 1024 // 3 MB
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
 
-const COMPRESS_OPTIONS = {
-  maxSizeMB: 0.3,
-  maxWidthOrHeight: 400,
-  useWebWorker: true,
-  initialQuality: 0.85,
-  fileType: 'image/jpeg' as const,
+/** На нативе (Android/iOS) Web Worker может быть недоступен — сжимаем в главном потоке */
+async function getCompressOptions(): Promise<Parameters<typeof imageCompression>[1]> {
+  let useWebWorker = true
+  if (typeof window !== 'undefined') {
+    try {
+      const { Capacitor } = await import('@capacitor/core')
+      if (Capacitor.isNativePlatform()) useWebWorker = false
+    } catch {
+      // Capacitor не подключён — веб
+    }
+  }
+  return {
+    maxSizeMB: 0.3,
+    maxWidthOrHeight: 400,
+    useWebWorker,
+    initialQuality: 0.85,
+    fileType: 'image/jpeg' as const,
+  }
 }
 
 const AVATAR_EXPIRY_SEC = 3600 // 1 час для подписанного URL (приватный бакет)
@@ -33,7 +45,8 @@ export async function uploadAvatar(
 
   let blob: File = file
   try {
-    blob = await imageCompression(file, COMPRESS_OPTIONS)
+    const options = await getCompressOptions()
+    blob = await imageCompression(file, options)
   } catch (e) {
     console.warn('Сжатие аватара не удалось, загружаем исходный файл:', e)
   }

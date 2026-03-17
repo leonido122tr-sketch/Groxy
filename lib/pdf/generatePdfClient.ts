@@ -1,6 +1,3 @@
-import { PDFDocument, rgb, degrees } from 'pdf-lib'
-import fontkit from '@pdf-lib/fontkit'
-
 type FoundationData =
   | {
       length: number
@@ -96,6 +93,8 @@ function dataUrlToUint8Array(dataUrl: string): Uint8Array {
 }
 
 export async function generatePdfClient(data: PdfData): Promise<Uint8Array> {
+  const { PDFDocument, rgb, degrees } = await import('pdf-lib')
+  const fontkit = (await import('@pdf-lib/fontkit')).default
   const doc = await PDFDocument.create()
   doc.registerFontkit(fontkit)
 

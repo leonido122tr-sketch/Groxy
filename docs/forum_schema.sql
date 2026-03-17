@@ -105,13 +105,4 @@ begin
 end;
 $$;
 
--- Seed categories
-insert into forum_categories (name, slug, sort_order) values
-  ('Пристрой 2 стены', 'pristroy-2', 1),
-  ('Пристрой 3 стены', 'pristroy-3', 2),
-  ('Пристрой 4 стены', 'pristroy-4', 3),
-  ('Фундамент', 'fundament', 4),
-  ('Стены', 'steny', 5),
-  ('Крыша', 'krysha', 6),
-  ('Другое', 'drugoe', 7)
-on conflict (slug) do nothing;
+-- Категории форума добавляются отдельным скриптом: docs/forum_seed_dom_i_stroyka.sql

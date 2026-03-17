@@ -16,7 +16,7 @@ import {
 import { getFoundationRoofOverridesFromStorage, setWallsOverridesInStorage } from '@/lib/projects/resultOverridesStorage'
 import { saveProjectToDevice, listDeviceProjects } from '@/lib/projects/deviceProjects'
 import { Capacitor } from '@capacitor/core'
-import { BackButton } from '@/app/components/BackButton'
+import { BackButton, useAndroidBackHandler } from '@/app/components/BackButton'
 import { BackIcon } from '@/app/components/AppIcons'
 
 declare global {
@@ -948,6 +948,7 @@ export default function WallsCalculator({ mode, projectId, initialProject, embed
     setPendingSave(false)
   }
 
+  useAndroidBackHandler(handleOverwriteCancel, !!overwriteModalProject)
 
   // Очищаем URL при размонтировании компонента (только для веб-версии)
   useEffect(() => {

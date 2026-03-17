@@ -1,7 +1,7 @@
-import { FORUM_CATEGORY_SLUGS } from '@/lib/forum/constants'
+import { FORUM_CATEGORY_SLUGS_PREGENERATED } from '@/lib/forum/constants'
 
 export function generateStaticParams() {
-  return FORUM_CATEGORY_SLUGS.map((slug) => ({ slug }))
+  return FORUM_CATEGORY_SLUGS_PREGENERATED.map((slug) => ({ slug }))
 }
 
 export default function ForumSlugLayout({

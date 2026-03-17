@@ -14,12 +14,16 @@ create index if not exists feedback_created_at on feedback(created_at desc);
 
 alter table feedback enable row level security;
 
--- Разрешаем вставку всем (anon и authenticated)
-create policy "feedback_insert"
-  on feedback for insert
-  with check (true);
+-- Удалить старую политику, если была (anon insert с true).
+drop policy if exists "feedback_insert" on feedback;
 
--- Чтение запрещено через anon key (админ смотрит через dashboard / service role)
+-- Вставка только для authenticated, запись должна быть от текущего пользователя (user_id = auth.uid()).
+create policy "feedback_allow_insert"
+  on feedback for insert
+  to authenticated
+  with check ( (user_id is not null) and (user_id = auth.uid()) );
+
+-- Чтение запрещено через API (админ смотрит через dashboard / service role)
 create policy "feedback_no_select"
   on feedback for select
   using (false);

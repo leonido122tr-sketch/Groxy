@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { PdfSaveFloppyButton } from './PdfSaveFloppyButton'
+import { ConfirmModal } from '@/app/components/Modal'
 import { useAndroidBackHandler, useSmartBack } from '@/app/components/BackButton'
 import {
   BackIcon,
@@ -22,6 +22,7 @@ import {
 import { getWallsOverridesFromStorage, getFoundationRoofOverridesFromStorage } from '@/lib/projects/resultOverridesStorage'
 import { listDeviceProjects, saveProjectToDevice } from '@/lib/projects/deviceProjects'
 import { persistProjectFromStorageWalls2, persistProjectFromStorageWalls3, persistProjectFromStorageWalls4 } from '@/lib/projects/persistProjectFromStorage'
+import { PROJECTS_LIMIT } from '@/lib/projects/projectsLimit'
 import { generateAndStorePdfWalls3, generateAndStorePdfWalls4 } from '@/lib/pdf/runSavePdfFromStorage'
 
 export type ProjectHubType = 'walls_2' | 'walls_3' | 'walls_4'
@@ -240,6 +241,8 @@ export default function ProjectHub({ projectType, title }: Props) {
   const [savedPdfUri, setSavedPdfUri] = useState<string | null>(null)
   const [includePdfMeta, setIncludePdfMeta] = useState(false)
   const [showSaveBeforeExitModal, setShowSaveBeforeExitModal] = useState(false)
+  /** Модалка «проект с таким именем уже есть» при сохранении (перезаписать / отмена) */
+  const [saveDuplicateModal, setSaveDuplicateModal] = useState<{ duplicate: LocalProject } | null>(null)
   const [foundationResult, setFoundationResult] = useState<{
     volume: number
     foundationLength: number
@@ -692,6 +695,105 @@ export default function ProjectHub({ projectType, title }: Props) {
     return true
   }
 
+  const hasAnySectionData = !!(foundationResult || wallsResult || roofResult)
+  const isSaveProjectActive = isDirty
+
+  const handleSaveProject = useCallback(async () => {
+    const trimmedName = (projectName.trim() || 'Проект').trim()
+    if (!trimmedName) {
+      setToast('Введите название проекта')
+      setTimeout(() => setToast(null), 2500)
+      return
+    }
+    sessionStorage.setItem(`currentProjectName${suffix}`, trimmedName)
+    const lastSavedId = sessionStorage.getItem(`lastSavedProjectId${suffix}`)?.trim() || ''
+    const duplicate = await findDuplicateByNameAndType(trimmedName, projectType, lastSavedId)
+    if (duplicate) {
+      setSaveDuplicateModal({ duplicate })
+      return
+    }
+
+    let currentCount = 0
+    let isUpdate = false
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const deviceList = await listDeviceProjects()
+        currentCount = deviceList.length
+        isUpdate = !!lastSavedId && deviceList.some((p) => p.id === lastSavedId)
+      } catch {
+        currentCount = 0
+      }
+    } else {
+      const localList = listLocalProjects().filter((p) => p.platform !== 'android')
+      currentCount = localList.length
+      isUpdate = !!lastSavedId && localList.some((p) => p.id === lastSavedId)
+    }
+    if (!isUpdate && currentCount >= PROJECTS_LIMIT) {
+      setToast(`Достигнут лимит проектов (${PROJECTS_LIMIT}). Удалите проект, чтобы сохранить новый.`)
+      setTimeout(() => setToast(null), 5000)
+      return
+    }
+
+    setToast('Сохранение...')
+    try {
+      ;(window as Window & { __GROXY_ALLOW_DEVICE_PROJECT_SAVE__?: boolean }).__GROXY_ALLOW_DEVICE_PROJECT_SAVE__ = true
+      try {
+        if (projectType === 'walls_2') {
+          await persistProjectFromStorageWalls2()
+        } else if (projectType === 'walls_3') {
+          await persistProjectFromStorageWalls3()
+        } else {
+          await persistProjectFromStorageWalls4()
+        }
+      } finally {
+        ;(window as Window & { __GROXY_ALLOW_DEVICE_PROJECT_SAVE__?: boolean }).__GROXY_ALLOW_DEVICE_PROJECT_SAVE__ = false
+      }
+      sessionStorage.setItem('projectIsDirty', 'false')
+      setIsDirty(false)
+      window.dispatchEvent(new CustomEvent('projectIsDirtyChanged'))
+      setToast('Проект сохранён')
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : ''
+      if (msg === 'DUPLICATE_PROJECT_NAME') {
+        setToast('Проект с таким названием уже существует')
+      } else {
+        setToast(msg || 'Ошибка сохранения')
+      }
+    }
+    setTimeout(() => setToast(null), 3000)
+  }, [projectType, suffix, projectName])
+
+  const onConfirmSaveOverwrite = useCallback(async () => {
+    if (!saveDuplicateModal?.duplicate) {
+      setSaveDuplicateModal(null)
+      return
+    }
+    const { duplicate } = saveDuplicateModal
+    setSaveDuplicateModal(null)
+    setToast('Сохранение...')
+    try {
+      ;(window as Window & { __GROXY_ALLOW_DEVICE_PROJECT_SAVE__?: boolean }).__GROXY_ALLOW_DEVICE_PROJECT_SAVE__ = true
+      try {
+        if (projectType === 'walls_2') {
+          await persistProjectFromStorageWalls2(duplicate.id)
+        } else if (projectType === 'walls_3') {
+          await persistProjectFromStorageWalls3(duplicate.id)
+        } else {
+          await persistProjectFromStorageWalls4(duplicate.id)
+        }
+      } finally {
+        ;(window as Window & { __GROXY_ALLOW_DEVICE_PROJECT_SAVE__?: boolean }).__GROXY_ALLOW_DEVICE_PROJECT_SAVE__ = false
+      }
+      sessionStorage.setItem('projectIsDirty', 'false')
+      setIsDirty(false)
+      window.dispatchEvent(new CustomEvent('projectIsDirtyChanged'))
+      setToast('Проект перезаписан')
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : 'Ошибка сохранения')
+    }
+    setTimeout(() => setToast(null), 3000)
+  }, [saveDuplicateModal, projectType])
+
   const handleBack = useCallback(() => {
     if (isPdfButtonActive && isDirty) {
       setShowSaveBeforeExitModal(true)
@@ -722,13 +824,6 @@ export default function ProjectHub({ projectType, title }: Props) {
               <BackIcon className="h-5 w-5" aria-label="Назад" />
             </button>
             <h1 className="max-w-[70%] truncate text-xl font-semibold tracking-[-0.02em] text-white">{title}</h1>
-            <PdfSaveFloppyButton
-              variant={projectType}
-              onToast={(m) => {
-                setToast(m)
-                setTimeout(() => setToast(null), 2500)
-              }}
-            />
           </div>
         </div>
       </header>
@@ -852,36 +947,60 @@ export default function ProjectHub({ projectType, title }: Props) {
           </div>
         </div>
 
-        <div className="mt-8 border-t border-white/10 pt-6">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="mt-8 border-t border-white/10 pt-6 pb-safe">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
             <button
               type="button"
-              onClick={openSavedPdf}
-              disabled={!savedPdfUri}
-              className={`inline-flex items-center justify-center gap-2 w-full rounded-xl px-6 py-4 text-base font-semibold transition-colors sm:flex-1 ${
-                savedPdfUri ? 'bg-[#2f6fed] text-white' : 'cursor-not-allowed bg-[#141a22] text-zinc-500'
+              onClick={() => void handleSaveProject()}
+              disabled={!isSaveProjectActive}
+              aria-label={isSaveProjectActive ? 'Сохранить проект' : 'Нет изменений для сохранения'}
+              aria-disabled={!isSaveProjectActive}
+              className={`inline-flex items-center justify-center gap-2 w-full rounded-xl px-6 py-4 text-base font-semibold transition-colors sm:flex-1 min-h-[48px] touch-manipulation ${
+                isSaveProjectActive
+                  ? 'bg-emerald-600 text-white hover:bg-emerald-500 active:bg-emerald-700'
+                  : 'cursor-not-allowed bg-white/10 text-zinc-500'
               }`}
             >
-              <DownloadIcon className="h-5 w-5" />
-              Открыть PDF
+              Сохранить проект
             </button>
-            <label className="inline-flex items-center gap-2 text-sm text-zinc-300">
-              <input
-                type="checkbox"
-                checked={includePdfMeta}
-                onChange={(e) => {
-                  setIncludePdfMeta(e.target.checked)
-                  sessionStorage.setItem(`includePdfMeta${suffix}`, String(e.target.checked))
-                  sessionStorage.setItem('projectIsDirty', 'true')
-                  window.dispatchEvent(new CustomEvent('projectDataChanged'))
-                }}
-                className="android-checkbox"
-              />
-              Подписать PDF
-            </label>
+            <button
+              type="button"
+              onClick={() => {
+                if (savedPdfUri && !isDirty) {
+                  openSavedPdf()
+                } else {
+                  void handleSavePdf(true)
+                }
+              }}
+              disabled={!isPdfButtonActive}
+              aria-label={isPdfButtonActive ? 'Создать PDF' : 'Введите название проекта для создания PDF'}
+              aria-disabled={!isPdfButtonActive}
+              className={`inline-flex items-center justify-center gap-2 w-full rounded-xl px-6 py-4 text-base font-semibold transition-colors sm:flex-1 min-h-[48px] touch-manipulation ${
+                isPdfButtonActive
+                  ? 'bg-blue-600 text-white hover:bg-blue-500 active:bg-blue-700'
+                  : 'cursor-not-allowed bg-white/10 text-zinc-500'
+              }`}
+            >
+              <DownloadIcon className="h-5 w-5" aria-hidden />
+              Создать PDF
+            </button>
           </div>
+          <label className="mt-3 inline-flex items-center gap-2 text-sm text-zinc-300">
+            <input
+              type="checkbox"
+              checked={includePdfMeta}
+              onChange={(e) => {
+                setIncludePdfMeta(e.target.checked)
+                sessionStorage.setItem(`includePdfMeta${suffix}`, String(e.target.checked))
+                sessionStorage.setItem('projectIsDirty', 'true')
+                window.dispatchEvent(new CustomEvent('projectDataChanged'))
+              }}
+              className="android-checkbox"
+            />
+            Подписать PDF
+          </label>
           {!isPdfButtonActive && (
-            <p className="mt-2 text-center text-sm text-zinc-400">Введите название проекта для сохранения PDF</p>
+            <p className="mt-2 text-center text-sm text-zinc-400">Введите название проекта для создания PDF</p>
           )}
           {isPdfButtonActive && !isPdfSaved && !foundationResult && !wallsResult && !roofResult && (
             <p className="mt-2 text-center text-sm text-zinc-400">Заполните хотя бы один раздел: фундамент, стены или крышу</p>
@@ -895,6 +1014,18 @@ export default function ProjectHub({ projectType, title }: Props) {
         </div>
       )}
 
+      {saveDuplicateModal && (
+        <ConfirmModal
+          isOpen
+          onClose={() => setSaveDuplicateModal(null)}
+          onConfirm={() => void onConfirmSaveOverwrite()}
+          title="Проект с таким именем уже существует"
+          description={`Другой проект с именем «${saveDuplicateModal.duplicate.name}» уже есть. Сохранить текущие данные поверх него (старые данные будут заменены)?`}
+          confirmLabel="Перезаписать"
+          cancelLabel="Отмена"
+        />
+      )}
+
       {showSaveBeforeExitModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <button
@@ -904,9 +1035,9 @@ export default function ProjectHub({ projectType, title }: Props) {
             onClick={() => setShowSaveBeforeExitModal(false)}
           />
           <div className="relative z-10 mx-4 w-full max-w-md rounded-[24px] bg-[#141a22] p-6 shadow-xl">
-            <h2 className="mb-4 text-xl font-semibold text-white">Сохранить проект?</h2>
+            <h2 className="mb-4 text-xl font-semibold text-white">Сохранить перед выходом?</h2>
             <p className="mb-6 text-base text-zinc-300">
-              У вас есть несохранённые изменения. Хотите сохранить проект перед выходом?
+              Есть несохранённые изменения. Сохранить проект и PDF, затем выйти?
             </p>
             <div className="flex gap-3">
               <button

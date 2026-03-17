@@ -7,6 +7,9 @@ import { deleteLocalProject, getLocalProject, listLocalProjects, upsertLocalProj
 import { clearResultOverridesForVariant, clearResultOverridesFromStorage, getFoundationRoofOverridesFromStorage, getWallsOverridesFromStorage, setFoundationOverridesInStorage, setRoofOverridesInStorage, setWallsOverridesInStorage } from '@/lib/projects/resultOverridesStorage'
 import { Capacitor } from '@capacitor/core'
 import { deleteDeviceProject, listDeviceProjects, saveProjectToDevice } from '@/lib/projects/deviceProjects'
+import { createClient } from '@/lib/supabase/client'
+import { getSupabaseProject, listSupabaseProjects, saveProjectToSupabase, isSupabaseProjectId } from '@/lib/projects/supabaseProjects'
+import { PROJECTS_LIMIT } from '@/lib/projects/projectsLimit'
 import WallsCalculator from '../create/walls-2/WallsCalculator'
 import Walls3Calculator from '../create/walls-3/walls3Calculator'
 import Walls4Calculator from '../create/walls-4/walls4Calculator'
@@ -28,7 +31,7 @@ import { DetailPlanWallsWalls4 } from '@/app/components/DetailPlanWallsWalls4'
 import { DetailPlanRoofWalls3 } from '@/app/components/DetailPlanRoofWalls3'
 import { DetailPlanRoofWalls4 } from '@/app/components/DetailPlanRoofWalls4'
 import { BackButton, useAndroidBackHandler, useSmartBack } from '@/app/components/BackButton'
-import { BackIcon, DownloadIcon, FoundationIcon, RoofIcon, WallsIcon } from '@/app/components/AppIcons'
+import { BackIcon, DownloadIcon, FoundationIcon, RoofIcon, ShareIcon, WallsIcon } from '@/app/components/AppIcons'
 
 function ProjectViewContent() {
   const router = useRouter()
@@ -51,6 +54,16 @@ function ProjectViewContent() {
       setLoading(true)
       
       try {
+        // Проекты из Supabase (id = uuid)
+        if (isSupabaseProjectId(id)) {
+          const supabase = createClient()
+          const supabaseProject = await getSupabaseProject(supabase, id)
+          if (supabaseProject && !cancelled) {
+            setProject(supabaseProject)
+            return
+          }
+        }
+
         // Для Android сначала проверяем устройство (проекты могут быть только там)
         if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
           console.log('[ProjectView] Android платформа, проверяем устройство...')
@@ -154,7 +167,14 @@ function ProjectViewContent() {
     const trimmed = newName.trim() || project.name
     if (trimmed === project.name) return
     const updated = { ...project, name: trimmed, updatedAt: new Date().toISOString() }
-    if (Capacitor.isNativePlatform()) {
+    if (isSupabaseProjectId(project.id)) {
+      const supabase = createClient()
+      const saved = await saveProjectToSupabase(supabase, updated)
+      if (saved) {
+        setProject(saved)
+        return
+      }
+    } else if (Capacitor.isNativePlatform()) {
       await saveProjectToDevice(updated)
     } else {
       upsertLocalProject(updated)
@@ -201,6 +221,8 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
   }, [resultsOverrides, cardVariant, activeTab])
   const lastSyncedProjectRef = useRef<{ id: string; updatedAt: string } | null>(null)
   const [showOverwriteConfirm, setShowOverwriteConfirm] = useState(false)
+  /** Модалка «проект с таким именем уже есть» при сохранении (перезаписать / отмена) */
+  const [saveDuplicateModal, setSaveDuplicateModal] = useState<{ toSave: LocalProject; duplicate: LocalProject } | null>(null)
   const [detailView, setDetailView] = useState<'foundation' | 'walls' | 'roof' | null>(null)
   const detailViewScrollYRef = useRef(0)
   const closeDetailViewRef = useRef<(() => void) | null>(null)
@@ -210,6 +232,11 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
   const pdfCapturePayloadRef = useRef<Parameters<typeof import('@/lib/pdf/generatePdfClient').generatePdfClient>[0] | null>(null)
   const [pdfCaptureExtras, setPdfCaptureExtras] = useState<{ foundation: unknown; roof: unknown } | null>(null)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
+  /** Модалка «сохранить перед выходом?» при нажатии Назад с несохранёнными изменениями */
+  const [showExitWithoutSaveModal, setShowExitWithoutSaveModal] = useState(false)
+  const isSaveProjectActiveRef = useRef(false)
+  const showExitWithoutSaveModalRef = useRef(false)
+  const handleSavePdfRef = useRef<(openViewer?: boolean, skipOverwriteConfirm?: boolean) => Promise<boolean>>(null!)
 
   const openDetailView = useCallback((view: 'foundation' | 'walls' | 'roof') => {
     detailViewScrollYRef.current = typeof window !== 'undefined' ? window.scrollY : 0
@@ -276,6 +303,12 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
   }, [activeTab, project])
 
   useAndroidBackHandler(() => {
+    if (showExitWithoutSaveModalRef.current) {
+      setShowExitWithoutSaveModal(false)
+      showExitWithoutSaveModalRef.current = false
+      return
+    }
+
     if (detailView !== null) {
       closeDetailViewRef.current?.()
       return
@@ -288,6 +321,12 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
 
     if (activeTab !== 'none') {
       closeActiveTab()
+      return
+    }
+
+    if (isSaveProjectActiveRef.current) {
+      setShowExitWithoutSaveModal(true)
+      showExitWithoutSaveModalRef.current = true
       return
     }
 
@@ -801,16 +840,55 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
 
   const isPdfSaved = !!savedPdfUri
   const isDirtyEffective = isDirty
-  // Есть ли данные по разделам (достаточно для PDF) — при открытии из «Мои проекты» кнопка должна быть доступна
-  const hasAnySectionData = !!(
-    (project.foundation && typeof project.foundation === 'object' && Object.keys(project.foundation).length > 0) ||
-    (project.data && (
-      ('width' in project.data && Number(project.data.width) > 0 && Number(project.data.length) > 0) ||
-      ('left' in project.data && Number(project.data.left) > 0 && Number(project.data.back) > 0 && Number(project.data.right) > 0)
-    )) ||
-    ((project as { roof?: unknown }).roof && typeof (project as { roof?: unknown }).roof === 'object')
-  )
-  const isPdfButtonActive = (project.name.trim() !== '') || isPdfSaved || isDirtyEffective || hasAnySectionData
+  // Есть ли данные по разделам (из project или из sessionStorage) — достаточно одного заполненного: фундамент, стены или крыша
+  const hasAnySectionData = (() => {
+    const fromProject =
+      (project.foundation && typeof project.foundation === 'object' && Object.keys(project.foundation).length > 0) ||
+      (project.data && (
+        ('width' in project.data && Number(project.data.width) > 0 && Number(project.data.length) > 0) ||
+        ('left' in project.data && Number(project.data.left) > 0 && Number(project.data.back) > 0 && Number(project.data.right) > 0)
+      )) ||
+      ((project as { roof?: unknown }).roof && typeof (project as { roof?: unknown }).roof === 'object')
+    if (fromProject) return true
+    if (typeof window === 'undefined') return false
+    const n = project.type === 'walls_2' ? '2' : project.type === 'walls_3' ? '3' : '4'
+    try {
+      const foundationRaw = sessionStorage.getItem(`currentProjectData_foundation_${n}`)
+      if (foundationRaw) {
+        const f = JSON.parse(foundationRaw) as Record<string, unknown>
+        if (project.type === 'walls_3') {
+          if (Number(f.left ?? 0) > 0 && Number(f.back ?? 0) > 0 && Number(f.right ?? 0) > 0 && Number(f.height ?? 0) > 0 && Number(f.thickness ?? 0) > 0) return true
+        } else {
+          if (Number(f.length ?? 0) > 0 && Number(f.width ?? 0) > 0 && Number(f.height ?? 0) > 0 && Number(f.thickness ?? 0) > 0) return true
+        }
+      }
+      const wallsRaw = sessionStorage.getItem(`currentProjectData_walls_${n}`)
+      if (wallsRaw) {
+        const w = JSON.parse(wallsRaw) as Record<string, unknown>
+        if (project.type === 'walls_3') {
+          if (Number(w.left ?? 0) > 0 && Number(w.back ?? 0) > 0 && Number(w.right ?? 0) > 0 && Number(w.height ?? 0) > 0) return true
+        } else {
+          if (Number(w.width ?? 0) > 0 && Number(w.length ?? 0) > 0 && Number(w.height ?? 0) > 0) return true
+        }
+      }
+      const roofRaw = sessionStorage.getItem(`currentProjectData_roof_${n}`)
+      if (roofRaw) {
+        const r = JSON.parse(roofRaw) as Record<string, unknown>
+        if (project.type === 'walls_3') {
+          if (Number(r.left ?? 0) > 0 && Number(r.back ?? 0) > 0 && Number(r.right ?? 0) > 0) return true
+        } else {
+          if (Number(r.width ?? 0) > 0 && Number(r.length ?? 0) > 0) return true
+        }
+      }
+    } catch {
+      // ignore parse errors
+    }
+    return false
+  })()
+  const isPdfButtonActive = (project.name.trim() !== '') || isPdfSaved || hasAnySectionData
+  const isSaveProjectActive = isDirtyEffective
+  isSaveProjectActiveRef.current = isDirtyEffective
+  showExitWithoutSaveModalRef.current = showExitWithoutSaveModal
 
   const materialLabels: Record<string, string> = {
     brick_m100: 'Кирпич (M100)',
@@ -856,6 +934,369 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
     sessionStorage.removeItem('pdfViewerReturnTo')
     router.push(`/pdf-viewer?${params.toString()}`)
   }
+
+  const handleSharePdf = useCallback(async () => {
+    setSaveMessage(null)
+    const needSave = !savedPdfUri || savedPdfUri === 'saved' || isDirtyEffective
+    if (needSave) {
+      const ok = await handleSavePdfRef.current?.(false, true)
+      if (!ok) return
+    }
+    const filename =
+      (typeof window !== 'undefined' ? sessionStorage.getItem('pdfViewerFilename') : null) ||
+      (project as { pdfFilename?: string }).pdfFilename ||
+      `${project.id}.pdf`
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const { Share } = await import('@capacitor/share')
+        const { getSavedPdfUri } = await import('@/lib/pdf/pdfStorage')
+        const saved = getSavedPdfUri(filename)
+        if (!saved?.uri) {
+          setSaveMessage('Файл PDF не найден. Сохраните PDF и попробуйте снова.')
+          setTimeout(() => setSaveMessage(null), 4000)
+          return
+        }
+        await Share.share({
+          title: project.name?.trim() || 'Проект',
+          files: [saved.uri],
+          dialogTitle: 'Поделиться PDF',
+        })
+        setSaveMessage('Готово.')
+        setTimeout(() => setSaveMessage(null), 2000)
+      } catch (e) {
+        console.error(e)
+        setSaveMessage('Не удалось открыть меню «Поделиться».')
+        setTimeout(() => setSaveMessage(null), 4000)
+      }
+      return
+    }
+
+    const uri = sessionStorage.getItem('pdfViewerUri')
+    if (!uri || uri === 'saved' || !uri.startsWith('blob:')) {
+      setSaveMessage('Сначала сохраните PDF.')
+      setTimeout(() => setSaveMessage(null), 3000)
+      return
+    }
+    try {
+      const res = await fetch(uri)
+      const blob = await res.blob()
+      const file = new File([blob], filename, { type: 'application/pdf' })
+      if (!navigator.share || !navigator.canShare?.({ files: [file] })) {
+        setSaveMessage('Поделиться нельзя в этом браузере.')
+        setTimeout(() => setSaveMessage(null), 4000)
+        return
+      }
+      await navigator.share({
+        files: [file],
+        title: project.name?.trim() || 'Проект',
+      })
+      setSaveMessage('Готово.')
+      setTimeout(() => setSaveMessage(null), 2000)
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') return
+      console.error(e)
+      setSaveMessage('Не удалось поделиться.')
+      setTimeout(() => setSaveMessage(null), 4000)
+    }
+  }, [project.id, project.name, savedPdfUri, isDirtyEffective])
+
+  const buildProjectFromViewState = useCallback((): LocalProject => {
+    const storageKey =
+      project.type === 'walls_2' ? 'currentProjectData_walls_2' :
+      project.type === 'walls_3' ? 'currentProjectData_walls_3' :
+      'currentProjectData_walls_4'
+    const storageRaw = typeof window !== 'undefined' ? sessionStorage.getItem(storageKey) : null
+    let currentData = project.data
+    if (storageRaw) {
+      try {
+        const parsed = JSON.parse(storageRaw) as { name?: string; material?: string; principle?: string; width?: number; length?: number; height?: number; thickness?: number; left?: number; back?: number; right?: number; openings?: unknown[]; note?: string }
+        if (parsed && (parsed.material !== undefined || parsed.principle !== undefined)) {
+          if (project.type === 'walls_2') {
+            const d = project.data as { width: number; length: number; height: number; thickness: number }
+            currentData = {
+              principle: (parsed.principle === 'outside' ? 'outside' : 'inside') as 'inside' | 'outside',
+              material: typeof parsed.material === 'string' ? parsed.material : project.data.material,
+              width: Number(parsed.width) > 0 ? Number(parsed.width) : (d.width ?? 0),
+              length: Number(parsed.length) > 0 ? Number(parsed.length) : (d.length ?? 0),
+              height: Number(parsed.height) > 0 ? Number(parsed.height) : (d.height ?? 0),
+              thickness: Number(parsed.thickness) > 0 ? Number(parsed.thickness) : (d.thickness ?? 0),
+              openings: Array.isArray(parsed.openings) ? parsed.openings as { width: number; height: number }[] : project.data.openings,
+              note: typeof parsed.note === 'string' ? parsed.note : project.data.note,
+            }
+          } else if (project.type === 'walls_3') {
+            const d = project.data as { left: number; back: number; right: number; height: number; thickness: number; openings?: Opening[] }
+            const useStorageOpenings = Array.isArray(parsed.openings) && parsed.openings.length > 0
+            currentData = {
+              principle: (parsed.principle === 'outside' ? 'outside' : 'inside') as 'inside' | 'outside',
+              material: typeof parsed.material === 'string' ? parsed.material : project.data.material,
+              left: Number(parsed.left) > 0 ? Number(parsed.left) : (d.left ?? 0),
+              back: Number(parsed.back) > 0 ? Number(parsed.back) : (d.back ?? 0),
+              right: Number(parsed.right) > 0 ? Number(parsed.right) : (d.right ?? 0),
+              height: Number(parsed.height) > 0 ? Number(parsed.height) : (d.height ?? 0),
+              thickness: Number(parsed.thickness) > 0 ? Number(parsed.thickness) : (d.thickness ?? 0),
+              openings: useStorageOpenings ? (parsed.openings as Opening[]) : (d.openings ?? []),
+              note: typeof parsed.note === 'string' ? parsed.note : project.data.note,
+            }
+          } else {
+            const d = project.data as { width: number; length: number; height: number; thickness: number }
+            currentData = {
+              principle: (parsed.principle === 'outside' ? 'outside' : 'inside') as 'inside' | 'outside',
+              material: typeof parsed.material === 'string' ? parsed.material : project.data.material,
+              width: Number(parsed.width) > 0 ? Number(parsed.width) : (d.width ?? 0),
+              length: Number(parsed.length) > 0 ? Number(parsed.length) : (d.length ?? 0),
+              height: Number(parsed.height) > 0 ? Number(parsed.height) : (d.height ?? 0),
+              thickness: Number(parsed.thickness) > 0 ? Number(parsed.thickness) : (d.thickness ?? 0),
+              openings: Array.isArray(parsed.openings) ? parsed.openings as { width: number; height: number }[] : project.data.openings,
+              note: typeof parsed.note === 'string' ? parsed.note : project.data.note,
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+    const variant = project.type === 'walls_2' ? '2' : project.type === 'walls_3' ? '3' : '4'
+    const mergedOverrides = { ...getFoundationRoofOverridesFromStorage(variant), ...getWallsOverridesFromStorage(variant) }
+    let projectToSave: LocalProject = {
+      ...project,
+      data: currentData,
+      pdfComment: pdfComment.trim() || undefined,
+      notes: notes.trim() || undefined,
+      resultsOverrides: mergedOverrides,
+      updatedAt: new Date().toISOString(),
+    } as LocalProject
+
+    const foundationKey =
+      project.type === 'walls_2' ? 'currentProjectData_foundation_2' :
+      project.type === 'walls_3' ? 'currentProjectData_foundation_3' :
+      'currentProjectData_foundation_4'
+    const foundationRaw = typeof window !== 'undefined' ? sessionStorage.getItem(foundationKey) : null
+    if (foundationRaw) {
+      try {
+        const f = JSON.parse(foundationRaw)
+        if (project.type === 'walls_3') {
+          const fl = Number(f.left ?? 0)
+          const fb = Number(f.back ?? 0)
+          const fr = Number(f.right ?? 0)
+          const fh = Number(f.height ?? 0)
+          const ft = Number(f.thickness ?? 0)
+          if (fl > 0 && fb > 0 && fr > 0 && fh > 0 && ft > 0) {
+            projectToSave = { ...projectToSave, foundation: { left: fl, back: fb, right: fr, height: fh, thickness: ft, principle: f.principle === 'inside' ? 'inside' : 'outside', concreteGrade: typeof f.concreteGrade === 'string' ? f.concreteGrade : undefined } } as LocalProject
+          }
+        } else {
+          const fl = Number(f.length ?? 0)
+          const fw = Number(f.width ?? 0)
+          const fh = Number(f.height ?? 0)
+          const ft = Number(f.thickness ?? 0)
+          if (fl > 0 && fw > 0 && fh > 0 && ft > 0) {
+            projectToSave = { ...projectToSave, foundation: { length: fl, width: fw, height: fh, thickness: ft, principle: f.principle === 'inside' ? 'inside' : 'outside', concreteGrade: typeof f.concreteGrade === 'string' ? f.concreteGrade : undefined } } as LocalProject
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    const roofKey = project.type === 'walls_2' ? 'currentProjectData_roof_2' : project.type === 'walls_3' ? 'currentProjectData_roof_3' : 'currentProjectData_roof_4'
+    const roofRaw = typeof window !== 'undefined' ? sessionStorage.getItem(roofKey) : null
+    if (roofRaw) {
+      try {
+        const r = JSON.parse(roofRaw) as Record<string, number>
+        const areaOverride = mergedOverrides.roofArea
+        if (project.type === 'walls_2') {
+          const w = Number(r.width ?? 0)
+          const len = Number(r.length ?? 0)
+          const h = Number(r.height ?? 0)
+          const o = Number(r.overhang ?? 0)
+          const slopeToward = Number(r.slopeToward ?? 0) === 1 ? 1 : 0
+          if (w > 0 && len > 0) {
+            const slopeRun = slopeToward === 0 ? w : len
+            const ridgeRun = slopeToward === 0 ? len : w
+            const slopeLen = Math.sqrt(slopeRun * slopeRun + h * h)
+            const area: number = typeof areaOverride === 'number' && Number.isFinite(areaOverride) && areaOverride >= 0 ? areaOverride : (slopeLen + o) * (ridgeRun + o)
+            projectToSave = { ...projectToSave, roof: { width: w, length: len, height: h, overhang: o, slopeToward, area: Math.round(area * 100) / 100 } } as LocalProject
+          }
+        } else if (project.type === 'walls_3') {
+          const left = Number(r.left ?? 0)
+          const back = Number(r.back ?? 0)
+          const right = Number(r.right ?? 0)
+          const h = Number(r.height ?? 0)
+          const o = Number(r.overhang ?? 0)
+          if (left > 0 && back > 0 && right > 0) {
+            const depth = Math.max(left, right)
+            const slopeLen = Math.sqrt(depth * depth + h * h)
+            const area: number = typeof areaOverride === 'number' && Number.isFinite(areaOverride) && areaOverride >= 0 ? areaOverride : (slopeLen + o) * (back + 2 * o)
+            projectToSave = { ...projectToSave, roof: { left, back, right, height: h, overhang: o, area: Math.round(area * 100) / 100 } } as LocalProject
+          }
+        } else {
+          const w = Number(r.width ?? 0)
+          const len = Number(r.length ?? 0)
+          const h = Number(r.height ?? 0)
+          const o = Number(r.overhang ?? 0)
+          const isGable = (r as Record<string, unknown>).type === 'gable'
+          const ridgeAlongLength = (r as Record<string, unknown>).ridgeAlongLength !== false
+          if (w > 0 && len > 0) {
+            let area: number
+            if (typeof areaOverride === 'number' && Number.isFinite(areaOverride) && areaOverride >= 0) {
+              area = areaOverride
+            } else if (isGable) {
+              const run = ridgeAlongLength ? w / 2 : len / 2
+              const slopeLen = Math.sqrt(run * run + h * h)
+              const slopeDim = slopeLen + o
+              const alongDim = ridgeAlongLength ? len + 2 * o : w + 2 * o
+              area = 2 * slopeDim * alongDim
+            } else {
+              const slopeLen = Math.sqrt(w * w + h * h)
+              const slopeDim = slopeLen + 2 * o
+              const lengthDim = len + 2 * o
+              area = slopeDim * lengthDim
+            }
+            projectToSave = { ...projectToSave, roof: { ...(isGable ? { type: 'gable' as const, ridgeAlongLength } : { type: 'single' as const }), width: w, length: len, height: h, overhang: o, area: Math.round(area * 100) / 100 } } as LocalProject
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return projectToSave
+  }, [project, pdfComment, notes])
+
+  const handleSaveProject = useCallback(async () => {
+    setSaveMessage(null)
+    const toSave = buildProjectFromViewState()
+    const trimmedName = (toSave.name || '').trim() || 'Проект'
+
+    if (isSupabaseProjectId(project.id)) {
+      try {
+        const supabase = createClient()
+        const saved = await saveProjectToSupabase(supabase, toSave)
+        if (saved) {
+          onProjectUpdated(saved)
+          setSaveMessage('Проект сохранён в облаке.')
+          sessionStorage.setItem('projectIsDirty', 'false')
+          setIsDirty(false)
+        } else {
+          const list = await listSupabaseProjects(supabase)
+          setSaveMessage(list.length >= PROJECTS_LIMIT
+            ? `Достигнут лимит проектов (${PROJECTS_LIMIT}). Удалите проект, чтобы сохранить новый.`
+            : 'Не удалось сохранить проект.')
+        }
+      } catch (e) {
+        console.error(e)
+        setSaveMessage('Ошибка при сохранении.')
+      }
+      setTimeout(() => setSaveMessage(null), 3000)
+      return
+    }
+
+    // Локальный или устройство: проверка дубликата по имени (другой проект с тем же именем и типом)
+    let duplicate: LocalProject | undefined
+    const webProjects = listLocalProjects().filter((p) => p.platform !== 'android')
+    duplicate = webProjects.find((p) => p.type === project.type && (p.name || '').trim() === trimmedName && p.id !== project.id)
+    if (!duplicate && Capacitor.isNativePlatform()) {
+      try {
+        const deviceProjects = await listDeviceProjects()
+        duplicate = deviceProjects.find((p) => p.type === project.type && (p.name || '').trim() === trimmedName && p.id !== project.id)
+      } catch {
+        // ignore
+      }
+    }
+    if (duplicate) {
+      setSaveDuplicateModal({ toSave, duplicate })
+      return
+    }
+
+    // Проверка лимита проектов (новый проект, не перезапись)
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const deviceList = await listDeviceProjects()
+        const isUpdate = deviceList.some((p) => p.id === project.id)
+        if (!isUpdate && deviceList.length >= PROJECTS_LIMIT) {
+          setSaveMessage(`Достигнут лимит проектов (${PROJECTS_LIMIT}). Удалите проект, чтобы сохранить новый.`)
+          setTimeout(() => setSaveMessage(null), 5000)
+          return
+        }
+      } catch {
+        // ignore
+      }
+    } else {
+      const localList = listLocalProjects().filter((p) => p.platform !== 'android')
+      const isUpdate = localList.some((p) => p.id === project.id)
+      if (!isUpdate && localList.length >= PROJECTS_LIMIT) {
+        setSaveMessage(`Достигнут лимит проектов (${PROJECTS_LIMIT}). Удалите проект, чтобы сохранить новый.`)
+        setTimeout(() => setSaveMessage(null), 5000)
+        return
+      }
+    }
+
+    try {
+      if (Capacitor.isNativePlatform()) {
+        ;(window as Window & { __GROXY_ALLOW_DEVICE_PROJECT_SAVE__?: boolean }).__GROXY_ALLOW_DEVICE_PROJECT_SAVE__ = true
+        try {
+          await saveProjectToDevice(toSave)
+          onProjectUpdated(toSave)
+          setSaveMessage('Проект сохранён на устройстве.')
+          sessionStorage.setItem('projectIsDirty', 'false')
+          setIsDirty(false)
+        } finally {
+          ;(window as Window & { __GROXY_ALLOW_DEVICE_PROJECT_SAVE__?: boolean }).__GROXY_ALLOW_DEVICE_PROJECT_SAVE__ = false
+        }
+      } else {
+        upsertLocalProject(toSave)
+        onProjectUpdated(toSave)
+        setSaveMessage('Проект сохранён.')
+        sessionStorage.setItem('projectIsDirty', 'false')
+        setIsDirty(false)
+      }
+    } catch (e) {
+      console.error(e)
+      setSaveMessage('Ошибка при сохранении.')
+    }
+    setTimeout(() => setSaveMessage(null), 3000)
+  }, [project.id, project.type, project.name, buildProjectFromViewState, onProjectUpdated])
+
+  const onConfirmSaveOverwrite = useCallback(async () => {
+    if (!saveDuplicateModal) return
+    const { toSave, duplicate } = saveDuplicateModal
+    const updated: LocalProject = {
+      ...toSave,
+      id: duplicate.id,
+      name: (toSave.name || '').trim() || duplicate.name,
+      createdAt: duplicate.createdAt,
+      updatedAt: new Date().toISOString(),
+    }
+    setSaveDuplicateModal(null)
+    setSaveMessage(null)
+    try {
+      if (Capacitor.isNativePlatform()) {
+        ;(window as Window & { __GROXY_ALLOW_DEVICE_PROJECT_SAVE__?: boolean }).__GROXY_ALLOW_DEVICE_PROJECT_SAVE__ = true
+        try {
+          await saveProjectToDevice(updated)
+        } finally {
+          ;(window as Window & { __GROXY_ALLOW_DEVICE_PROJECT_SAVE__?: boolean }).__GROXY_ALLOW_DEVICE_PROJECT_SAVE__ = false
+        }
+      } else {
+        upsertLocalProject(updated)
+      }
+      if (project.id !== duplicate.id) {
+        deleteLocalProject(project.id)
+        try {
+          await deleteDeviceProject(project.id)
+        } catch {
+          // ignore
+        }
+      }
+      onProjectUpdated(updated)
+      setSaveMessage('Проект перезаписан.')
+      sessionStorage.setItem('projectIsDirty', 'false')
+      setIsDirty(false)
+    } catch (e) {
+      console.error(e)
+      setSaveMessage('Ошибка при сохранении.')
+    }
+    setTimeout(() => setSaveMessage(null), 3000)
+  }, [saveDuplicateModal, project.id, onProjectUpdated])
 
   const handleSavePdf = async (openViewer = false, skipOverwriteConfirm = false): Promise<boolean> => {
     // Если нужно открыть, игнорируем наличие сохраненного URI и перегенерируем, чтобы гарантировать наличие файла
@@ -1324,6 +1765,7 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
       return false
     }
   }
+  handleSavePdfRef.current = handleSavePdf
 
   const onConfirmOverwrite = () => {
     setShowOverwriteConfirm(false)
@@ -1432,13 +1874,21 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
         <div className="mx-auto max-w-5xl px-4 py-3 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between gap-4">
             {activeTab === 'none' ? (
-              <BackButton
-                fallbackHref="/project"
-                registerHardwareBack={false}
+              <button
+                type="button"
+                onClick={() => {
+                  if (isSaveProjectActive) {
+                    setShowExitWithoutSaveModal(true)
+                    showExitWithoutSaveModalRef.current = true
+                  } else {
+                    goBackToProjects()
+                  }
+                }}
+                aria-label="Назад"
                 className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-2xl bg-[#1a2230] px-3 py-2.5 text-sm font-medium text-white"
               >
-                <BackIcon className="h-5 w-5" aria-label="Назад" />
-              </BackButton>
+                <BackIcon className="h-5 w-5" aria-hidden />
+              </button>
             ) : (
               <button
                 type="button"
@@ -1449,23 +1899,7 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
               </button>
             )}
             <h1 className="text-2xl font-bold truncate max-w-[70%]">{PROJECT_TYPE_TITLES[project.type] ?? project.name}</h1>
-            {activeTab === 'none' ? (
-              <button
-                type="button"
-                onClick={() => void handleSavePdf(false)}
-                disabled={!isDirtyEffective}
-                aria-label="Сохранить PDF"
-                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors ${
-                  isDirtyEffective
-                    ? 'bg-blue-600 text-white hover:bg-blue-500'
-                    : 'cursor-not-allowed bg-white/10 text-zinc-500'
-                }`}
-              >
-                <DownloadIcon className="h-5 w-5" aria-hidden />
-              </button>
-            ) : (
-              <div className="w-[88px]" />
-            )}
+            <div className="w-9 shrink-0" aria-hidden />
           </div>
         </div>
       </header>
@@ -1589,14 +2023,28 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
             </div>
           </div>
 
-          <div className="mt-8 pt-6 border-t border-white/10">
+          <div className="mt-8 pt-6 border-t border-white/10 pb-safe">
             <div className="flex flex-col gap-3">
               {saveMessage && (
                 <p className="text-sm text-amber-400" role="status">
                   {saveMessage}
                 </p>
               )}
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
+              <button
+                type="button"
+                onClick={() => void handleSaveProject()}
+                disabled={!isSaveProjectActive}
+                aria-label={isSaveProjectActive ? 'Сохранить проект' : 'Нет изменений для сохранения'}
+                aria-disabled={!isSaveProjectActive}
+                className={`inline-flex items-center justify-center gap-2 w-full rounded-xl px-6 py-4 text-base font-semibold transition-colors sm:flex-1 min-h-[48px] touch-manipulation ${
+                  isSaveProjectActive
+                    ? 'bg-emerald-600 text-white hover:bg-emerald-500 active:bg-emerald-700'
+                    : 'cursor-not-allowed bg-white/10 text-zinc-500'
+                }`}
+              >
+                Сохранить проект
+              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -1607,15 +2055,32 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
                   }
                 }}
                 disabled={!isPdfButtonActive}
-                className={`inline-flex items-center justify-center gap-2 w-full rounded-xl px-6 py-4 text-base font-semibold transition-colors sm:flex-1 ${
+                aria-label={isPdfButtonActive ? 'Создать PDF' : 'Введите данные проекта для создания PDF'}
+                aria-disabled={!isPdfButtonActive}
+                className={`inline-flex items-center justify-center gap-2 w-full rounded-xl px-6 py-4 text-base font-semibold transition-colors sm:flex-1 min-h-[48px] touch-manipulation ${
                   isPdfButtonActive
-                    ? 'bg-blue-600 text-white hover:bg-blue-500'
+                    ? 'bg-blue-600 text-white hover:bg-blue-500 active:bg-blue-700'
                     : 'cursor-not-allowed bg-white/10 text-zinc-500'
                 }`}
               >
-                <DownloadIcon className="h-5 w-5" />
-                {isPdfSaved && !isDirtyEffective ? 'Открыть PDF' : 'Сохранить в PDF'}
+                <DownloadIcon className="h-5 w-5" aria-hidden />
+                Создать PDF
               </button>
+              {typeof navigator !== 'undefined' && (Capacitor.isNativePlatform() || !!navigator.share) && (
+                <button
+                  type="button"
+                  onClick={() => void handleSharePdf()}
+                  disabled={!isPdfButtonActive}
+                  className={`inline-flex items-center justify-center gap-2 w-full rounded-xl px-6 py-4 text-base font-semibold transition-colors sm:flex-1 ${
+                    isPdfButtonActive
+                      ? 'bg-violet-600 text-white hover:bg-violet-500'
+                      : 'cursor-not-allowed bg-white/10 text-zinc-500'
+                  }`}
+                >
+                  <ShareIcon className="h-5 w-5" />
+                  Поделиться PDF
+                </button>
+              )}
               <label className="inline-flex items-center gap-2 text-sm text-zinc-300">
                 <input
                   type="checkbox"
@@ -2018,13 +2483,46 @@ function ProjectViewWithTabs({ project, onRenameProject, onProjectUpdated }: { p
         )
       })()}
 
+      {saveDuplicateModal && (
+        <ConfirmModal
+          isOpen
+          onClose={() => setSaveDuplicateModal(null)}
+          onConfirm={() => void onConfirmSaveOverwrite()}
+          title="Проект с таким именем уже существует"
+          description={`Другой проект с именем «${saveDuplicateModal.duplicate.name}» уже есть. Сохранить текущие данные поверх него (старые данные будут заменены)?`}
+          confirmLabel="Перезаписать"
+          cancelLabel="Отмена"
+        />
+      )}
+
+      {showExitWithoutSaveModal && (
+        <ConfirmModal
+          isOpen
+          onClose={() => {
+            setShowExitWithoutSaveModal(false)
+            showExitWithoutSaveModalRef.current = false
+            goBackToProjects()
+          }}
+          onConfirm={async () => {
+            setShowExitWithoutSaveModal(false)
+            showExitWithoutSaveModalRef.current = false
+            await handleSaveProject()
+            goBackToProjects()
+          }}
+          title="Сохранить перед выходом?"
+          description="Есть несохранённые изменения. Сохранить проект и PDF, затем выйти?"
+          confirmLabel="Сохранить и выйти"
+          cancelLabel="Выйти без сохранения"
+        />
+      )}
+
       {showOverwriteConfirm && (
         <ConfirmModal
           isOpen
           onClose={onCancelOverwrite}
           onConfirm={onConfirmOverwrite}
-          title="Перезаписать проект и PDF?"
-          description={`Текущие данные проекта «${project.name.trim() || 'Проект'}» и PDF будут сохранены.`}
+          title="Перезаписать сохранённый PDF?"
+          description="Создать новый PDF по текущим данным и перезаписать ранее сохранённый файл?"
           confirmLabel="Перезаписать"
           cancelLabel="Отмена"
         />

@@ -1,13 +1,21 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
+import { Bell } from 'lucide-react'
 import { DashboardIcon, ProfileIcon, ProjectsIcon } from './AppIcons'
 import { LogoutButton } from './LogoutButton'
+import { NotificationDrawer } from './NotificationDrawer'
+import { useAuth } from '@/lib/auth/AuthContext'
+import { useForumNotificationCount } from '@/lib/forum/useForumNotificationCount'
 
 export function AppHeader() {
   const pathname = usePathname()
+  const { user } = useAuth()
+  const { count: notificationCount } = useForumNotificationCount(user?.id)
+  const [notificationDrawerOpen, setNotificationDrawerOpen] = useState(false)
   const isDashboard = pathname === '/dashboard'
   const isProjectsArea = pathname?.startsWith('/projects')
   const isProjectLibrary = pathname === '/project'
@@ -55,6 +63,23 @@ export function AppHeader() {
 
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setNotificationDrawerOpen(true)}
+                className={`relative flex min-h-12 min-w-12 items-center justify-center rounded-2xl px-3 py-2.5 transition ${notificationDrawerOpen ? 'bg-[#2f6fed] text-white' : 'bg-[#1a2230] text-zinc-200 hover:bg-[#243040]'}`}
+                aria-label="Уведомления"
+              >
+                <Bell className="h-4 w-4" />
+                {notificationCount > 0 && (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-white">
+                    {notificationCount > 99 ? '99+' : notificationCount}
+                  </span>
+                )}
+              </button>
+              <NotificationDrawer
+                isOpen={notificationDrawerOpen}
+                onClose={() => setNotificationDrawerOpen(false)}
+              />
               <Link
                 href="/dashboard"
                 className={navItemClass(isDashboard)}

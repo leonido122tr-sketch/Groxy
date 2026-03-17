@@ -46,8 +46,6 @@
         </provider>
     </application>
 
-    <!-- INTERNET — сеть. READ_MEDIA_IMAGES / READ_EXTERNAL_STORAGE — выбор фото для загрузки в форум (галерея). -->
+    <!-- Только INTERNET. Выбор фото: через системный выборник (Photo Picker / SAF), без разрешений на хранилище/медиа. -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 </manifest>

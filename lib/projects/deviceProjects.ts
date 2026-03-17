@@ -1,4 +1,5 @@
 import type { LocalProject } from './localProjects'
+import { PROJECTS_LIMIT } from './projectsLimit'
 
 async function isNative() {
   const { Capacitor } = await import('@capacitor/core')
@@ -13,6 +14,13 @@ export async function saveProjectToDevice(project: LocalProject) {
   const allow = (window as Window & { __GROXY_ALLOW_DEVICE_PROJECT_SAVE__?: boolean }).__GROXY_ALLOW_DEVICE_PROJECT_SAVE__ === true
   if (!allow) {
     console.warn('saveProjectToDevice: BLOCKED (no explicit user consent)')
+    return
+  }
+
+  const list = await listDeviceProjects()
+  const isUpdate = list.some((p) => p.id === project.id)
+  if (!isUpdate && list.length >= PROJECTS_LIMIT) {
+    console.warn('saveProjectToDevice: BLOCKED (projects limit reached)')
     return
   }
 

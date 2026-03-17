@@ -28,6 +28,8 @@ export function ForumCategoryClient({ slug }: { slug: string }) {
   const { user } = useAuth()
   const [category, setCategory] = useState<ForumCategory | null>(null)
   const [topics, setTopics] = useState<ForumTopicWithAuthor[]>([])
+  const [repliesCountByTopicId, setRepliesCountByTopicId] = useState<Record<string, number>>({})
+  const [topicLikesCount, setTopicLikesCount] = useState<Record<string, number>>({})
   const [authorsMap, setAuthorsMap] = useState<Record<string, AuthorInfo>>({})
   const [avatarUrls, setAvatarUrls] = useState<Record<string, string>>({})
 
@@ -61,6 +63,34 @@ export function ForumCategoryClient({ slug }: { slug: string }) {
         if (cancelled || !res?.data) return
         const list = res.data as ForumTopicWithAuthor[]
         setTopics(list)
+        const topicIds = list.map((t) => t.id)
+        if (topicIds.length > 0) {
+          const { data: posts } = await supabase
+            .from('forum_posts')
+            .select('topic_id')
+            .in('topic_id', topicIds)
+          const countByTopic: Record<string, number> = {}
+          topicIds.forEach((id) => { countByTopic[id] = 0 })
+          ;(posts ?? []).forEach((row: { topic_id: string }) => {
+            countByTopic[row.topic_id] = (countByTopic[row.topic_id] ?? 0) + 1
+          })
+          if (!cancelled) setRepliesCountByTopicId(countByTopic)
+        }
+        if (topicIds.length > 0) {
+          supabase
+            .from('forum_topic_likes')
+            .select('topic_id')
+            .in('topic_id', topicIds)
+            .then(({ data: likes }) => {
+              if (cancelled) return
+              const byTopic: Record<string, number> = {}
+              topicIds.forEach((id) => { byTopic[id] = 0 })
+              ;(likes ?? []).forEach((row: { topic_id: string }) => {
+                byTopic[row.topic_id] = (byTopic[row.topic_id] ?? 0) + 1
+              })
+              setTopicLikesCount(byTopic)
+            })
+        }
         const userIds = [...new Set(list.map((t) => t.user_id).filter(Boolean))]
         if (userIds.length === 0) return
         const { data: profiles } = await supabase
@@ -145,18 +175,19 @@ export function ForumCategoryClient({ slug }: { slug: string }) {
                       </div>
                     </div>
                     {firstImage && (
-                      <div className="mt-3 w-full aspect-[4/3] overflow-hidden rounded-[20px] bg-[#10161f]">
+                      <div className="mt-3 w-full overflow-hidden bg-[#10161f]">
                         <img
                           src={firstImage}
                           alt=""
-                          className="h-full w-full object-cover"
+                          className="max-h-[420px] w-full object-contain"
                         />
                       </div>
                     )}
                     <div className="px-5 py-4">
                       <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-400">
-                        <span>{t.replies_count} комментариев</span>
+                        <span>{repliesCountByTopicId[t.id] ?? t.replies_count} комментариев</span>
                         <span>{t.views_count} просмотров</span>
+                        <span>{(topicLikesCount[t.id] ?? 0) > 0 ? `${topicLikesCount[t.id]} лайков` : ''}</span>
                         <span>
                           {new Date(t.updated_at).toLocaleDateString('ru-RU', {
                             day: 'numeric',

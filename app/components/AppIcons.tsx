@@ -1,5 +1,6 @@
 'use client'
 
+/** Импорты только нужных иконок из lucide-react (named imports) для tree-shaking. */
 import type { SVGProps } from 'react'
 import {
   ArrowLeft,
@@ -17,6 +18,7 @@ import {
   LogOut,
   MessagesSquare,
   Monitor,
+  Share2,
   ShieldCheck,
   Smartphone,
   Thermometer,
@@ -75,6 +77,7 @@ export const CompareIcon = makeIcon(Calculator)
 export const ForumIcon = makeIcon(MessagesSquare)
 export const PdfIcon = makeIcon(FileText)
 export const DownloadIcon = makeIcon(Download)
+export const ShareIcon = makeIcon(Share2)
 export const DeleteIcon = makeIcon(Trash2)
 export const AndroidIcon = makeIcon(Smartphone)
 export const WebIcon = makeIcon(Monitor)

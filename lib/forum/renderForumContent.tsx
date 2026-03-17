@@ -1,6 +1,7 @@
 'use client'
 
 import React from 'react'
+import { ForumImageBlock } from '@/app/(protected)/forum/components/ForumImageBlock'
 
 /** Проверяет, похожа ли строка на URL изображения */
 export function isImageUrl(line: string): boolean {
@@ -115,28 +116,22 @@ function lineToSegments(line: string): Array<{ type: 'text' | 'image'; value: st
   return segments.length > 0 ? segments : [{ type: 'text', value: line }]
 }
 
-const imageFigureClass = 'max-w-full rounded-xl border border-white/10 object-contain max-h-[280px]'
+const imageFigureClass = 'max-w-full border border-white/10 object-contain max-h-[280px]'
 
 /**
  * Рендерит текст поста/темы. Если content в новом формате (---IMAGES---), текст и фото раздельно;
  * иначе legacy: контент может содержать URL картинок в тексте.
  */
-export function renderForumContent(content: string, className = 'whitespace-pre-wrap text-sm text-zinc-200') {
+export function renderForumContent(content: string, className = 'whitespace-pre-wrap break-words text-sm text-zinc-200 min-w-0') {
   const hasDelimiter = content.includes(CONTENT_IMAGES_DELIMITER)
   if (hasDelimiter) {
     const { text, imageUrls } = parseContent(content)
     return (
       <div className={className}>
-        {text ? <div className="whitespace-pre-wrap">{text}</div> : null}
         {imageUrls.length > 0 ? (
-          <div className="mt-3 flex flex-col gap-2">
-            {imageUrls.map((url, i) => (
-              <figure key={i}>
-                <img src={url} alt="" className={imageFigureClass} />
-              </figure>
-            ))}
-          </div>
+          <ForumImageBlock urls={imageUrls} className="mb-3" />
         ) : null}
+        {text ? <div className="whitespace-pre-wrap">{text}</div> : null}
       </div>
     )
   }

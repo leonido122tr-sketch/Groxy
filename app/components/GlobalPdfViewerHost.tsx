@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { PdfViewer } from './PdfViewer'
+import { useAndroidBackHandler } from '@/app/components/BackButton'
 import { Capacitor } from '@capacitor/core'
+import { PdfViewer } from './PdfViewer'
 
 type PdfViewerPayload = {
   filename: string
@@ -19,6 +20,8 @@ declare global {
 
 export function GlobalPdfViewerHost() {
   const [payload, setPayload] = useState<PdfViewerPayload | null>(null)
+
+  useAndroidBackHandler(() => setPayload(null), payload !== null)
 
   useEffect(() => {
     const handle = async (event: CustomEvent) => {

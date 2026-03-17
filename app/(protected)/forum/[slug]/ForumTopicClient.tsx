@@ -1,16 +1,19 @@
 'use client'
 
 import { createClient } from '@/lib/supabase/client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import Link from 'next/link'
+import { Eye, Heart, MessageCircle, Smile, Paperclip, Send } from 'lucide-react'
 import { BackIcon } from '@/app/components/AppIcons'
 import { AppPage, SurfaceCard } from '@/app/components/AppShell'
 import { AppHeader } from '@/app/components/AppHeader'
 import { BackButton } from '@/app/components/BackButton'
 import { PageLoader } from '@/app/components/PageLoader'
-import { ForumImageUpload } from '../components/ForumImageUpload'
 import { CONTENT_IMAGES_DELIMITER, parseContent, renderForumContent } from '@/lib/forum/renderForumContent'
+import { FORUM_EMOJI_USAGE_KEY, FORUM_EMOJIS } from '@/lib/forum/forumEmoji'
 import { getAvatarDisplayUrl } from '@/lib/avatar/uploadAvatar'
+import { uploadForumImage } from '@/lib/forum/uploadForumImage'
+import { ForumImagePreviewGrid } from '@/app/(protected)/forum/components/ForumImagePreviewGrid'
 import { useAuth } from '@/lib/auth/AuthContext'
 import type { ForumCategory } from '@/lib/forum/types'
 import type { ForumTopic } from '@/lib/forum/types'
@@ -25,6 +28,13 @@ function formatDate(s: string) {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function formatTime(s: string) {
+  return new Date(s).toLocaleTimeString('ru-RU', {
     hour: '2-digit',
     minute: '2-digit',
   })
@@ -46,6 +56,16 @@ export function ForumTopicClient({ slug, topicId }: { slug: string; topicId: str
   const [editContent, setEditContent] = useState('')
   const [editImageUrls, setEditImageUrls] = useState<string[]>([])
   const [savingEdit, setSavingEdit] = useState(false)
+  const [attaching, setAttaching] = useState(false)
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
+  const [emojiUsage, setEmojiUsage] = useState<Record<string, number>>({})
+  const [topicLikesCount, setTopicLikesCount] = useState(0)
+  const [topicLikedByMe, setTopicLikedByMe] = useState(false)
+  const [postLikesCount, setPostLikesCount] = useState<Record<string, number>>({})
+  const [postLikedByMe, setPostLikedByMe] = useState<Record<string, boolean>>({})
+  const replyFileInputRef = useRef<HTMLInputElement>(null)
+  const replyTextareaRef = useRef<HTMLTextAreaElement>(null)
+  const emojiPickerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!slug || !topicId || !user) {
@@ -70,7 +90,7 @@ export function ForumTopicClient({ slug, topicId }: { slug: string; topicId: str
       const topicData = !topicRes.error && topicRes.data ? (topicRes.data as ForumTopic) : null
       const postsData = postsRes.data ? (postsRes.data as ForumPost[]) : []
       if (topicData) {
-        setTopic(topicData)
+        setTopic({ ...topicData, replies_count: postsData.length })
         supabase.rpc('increment_forum_topic_views', { tid: topicId }).then(() => {})
       }
       setPosts(postsData)
@@ -98,6 +118,32 @@ export function ForumTopicClient({ slug, topicId }: { slug: string; topicId: str
           })
         )
         if (!cancelled) setAvatarUrls(urls)
+      }
+      if (topicId && !cancelled) {
+        Promise.all([
+          supabase.from('forum_topic_likes').select('user_id').eq('topic_id', topicId),
+          postsData.length > 0
+            ? supabase.from('forum_post_likes').select('post_id, user_id').in('post_id', postsData.map((p) => p.id))
+            : Promise.resolve({ data: [] as { post_id: string; user_id: string }[] }),
+        ]).then(([topicLikesRes, postLikesRes]) => {
+          if (cancelled) return
+          const topicRows = (topicLikesRes.data ?? []) as { user_id: string }[]
+          setTopicLikesCount(topicRows.length)
+          setTopicLikedByMe(user ? topicRows.some((r) => r.user_id === user.id) : false)
+          const postRows = (postLikesRes.data ?? []) as { post_id: string; user_id: string }[]
+          const byPost: Record<string, number> = {}
+          const likedByMe: Record<string, boolean> = {}
+          postsData.forEach((p) => {
+            byPost[p.id] = 0
+            likedByMe[p.id] = false
+          })
+          postRows.forEach((r) => {
+            byPost[r.post_id] = (byPost[r.post_id] ?? 0) + 1
+            if (user && r.user_id === user.id) likedByMe[r.post_id] = true
+          })
+          setPostLikesCount(byPost)
+          setPostLikedByMe(likedByMe)
+        })
       }
       if (!cancelled) setLoading(false)
     })
@@ -130,14 +176,85 @@ export function ForumTopicClient({ slug, topicId }: { slug: string; topicId: str
     }
     setReplyText('')
     setReplyImageUrls([])
+    if (replyTextareaRef.current) {
+      replyTextareaRef.current.style.height = 'auto'
+    }
     const { data } = await supabase
       .from('forum_posts')
       .select('*')
       .eq('topic_id', topicId)
       .order('created_at', { ascending: true })
-    if (data) setPosts(data as ForumPost[])
+    if (data) {
+      const newPosts = data as ForumPost[]
+      setPosts(newPosts)
+      setPostLikesCount((prev) => {
+        const next = { ...prev }
+        newPosts.forEach((p) => {
+          if (next[p.id] === undefined) next[p.id] = 0
+        })
+        return next
+      })
+      setPostLikedByMe((prev) => {
+        const next = { ...prev }
+        newPosts.forEach((p) => {
+          if (next[p.id] === undefined) next[p.id] = false
+        })
+        return next
+      })
+      const newPostUserIds = [...new Set(newPosts.map((p) => p.user_id).filter(Boolean))] as string[]
+      const missingIds = newPostUserIds.filter((id) => !avatarUrls[id])
+      if (missingIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('идентификатор, отображаемое_имя, электронная_почта, аватар')
+          .in('идентификатор', missingIds)
+        const list = (profiles ?? []) as unknown as ProfileRow[]
+        const newMap: Record<string, AuthorInfo> = {}
+        const newUrls: Record<string, string> = {}
+        for (const p of list) {
+          newMap[p.идентификатор] = {
+            display_name: p.отображаемое_имя ?? null,
+            email: p.электронная_почта ?? null,
+            avatar: p.аватар ?? null,
+          }
+          const url = await getAvatarDisplayUrl(supabase, p.аватар)
+          if (url) newUrls[p.идентификатор] = url
+        }
+        setAuthorsMap((prev) => ({ ...prev, ...newMap }))
+        setAvatarUrls((prev) => ({ ...prev, ...newUrls }))
+      }
+    }
     if (topic) setTopic({ ...topic, replies_count: topic.replies_count + 1 })
   }
+
+  const toggleTopicLike = useCallback(async () => {
+    if (!user || !topicId) return
+    const supabase = createClient()
+    if (topicLikedByMe) {
+      await supabase.from('forum_topic_likes').delete().eq('topic_id', topicId).eq('user_id', user.id)
+      setTopicLikesCount((c) => Math.max(0, c - 1))
+      setTopicLikedByMe(false)
+    } else {
+      await supabase.from('forum_topic_likes').insert({ topic_id: topicId, user_id: user.id })
+      setTopicLikesCount((c) => c + 1)
+      setTopicLikedByMe(true)
+    }
+  }, [user, topicId, topicLikedByMe])
+
+  const togglePostLike = useCallback(async (postId: string) => {
+    if (!user) return
+    const supabase = createClient()
+    const liked = postLikedByMe[postId]
+    if (liked) {
+      await supabase.from('forum_post_likes').delete().eq('post_id', postId).eq('user_id', user.id)
+      setPostLikesCount((prev) => ({ ...prev, [postId]: Math.max(0, (prev[postId] ?? 0) - 1) }))
+      setPostLikedByMe((prev) => ({ ...prev, [postId]: false }))
+    } else {
+      await supabase.from('forum_post_likes').insert({ post_id: postId, user_id: user.id })
+      setPostLikesCount((prev) => ({ ...prev, [postId]: (prev[postId] ?? 0) + 1 }))
+      setPostLikedByMe((prev) => ({ ...prev, [postId]: true }))
+    }
+  }, [user, postLikedByMe])
 
   const startEditTopic = () => {
     if (!topic) return
@@ -152,6 +269,95 @@ export function ForumTopicClient({ slug, topicId }: { slug: string; topicId: str
     setIsEditingTopic(false)
     setError(null)
   }
+
+  const hasReplyContent = replyText.trim().length > 0 || replyImageUrls.length > 0
+
+  const onReplyAttach = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0]
+      if (!file || !user) return
+      e.target.value = ''
+      if (replyImageUrls.length >= 5) return
+      setError(null)
+      setAttaching(true)
+      try {
+        const supabase = createClient()
+        const url = await uploadForumImage(supabase, file, user.id)
+        setReplyImageUrls((prev) => (prev.length >= 5 ? prev : [...prev, url]))
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Не удалось загрузить фото.')
+      } finally {
+        setAttaching(false)
+      }
+    },
+    [user, replyImageUrls.length]
+  )
+
+  const adjustReplyTextareaHeight = useCallback(() => {
+    const ta = replyTextareaRef.current
+    if (!ta) return
+    ta.style.height = 'auto'
+    ta.style.height = `${ta.scrollHeight}px`
+  }, [])
+
+  const insertEmoji = useCallback(
+    (emoji: string) => {
+      const ta = replyTextareaRef.current
+      if (!ta) {
+        setReplyText((prev) => prev + emoji)
+      } else {
+        const start = ta.selectionStart
+        const end = ta.selectionEnd
+        const before = replyText.slice(0, start)
+        const after = replyText.slice(end)
+        const next = before + emoji + after
+        setReplyText(next)
+        requestAnimationFrame(() => {
+          ta.focus()
+          const newPos = start + emoji.length
+          ta.setSelectionRange(newPos, newPos)
+          adjustReplyTextareaHeight()
+        })
+      }
+      setEmojiPickerOpen(false)
+      try {
+        const raw = localStorage.getItem(FORUM_EMOJI_USAGE_KEY)
+        const usage: Record<string, number> = raw ? JSON.parse(raw) : {}
+        usage[emoji] = (usage[emoji] ?? 0) + 1
+        localStorage.setItem(FORUM_EMOJI_USAGE_KEY, JSON.stringify(usage))
+        setEmojiUsage(usage)
+      } catch {
+        // ignore
+      }
+    },
+    [replyText, adjustReplyTextareaHeight]
+  )
+
+  useEffect(() => {
+    if (!emojiPickerOpen) return
+    try {
+      const raw = localStorage.getItem(FORUM_EMOJI_USAGE_KEY)
+      setEmojiUsage(raw ? JSON.parse(raw) : {})
+    } catch {
+      setEmojiUsage({})
+    }
+  }, [emojiPickerOpen])
+
+  useEffect(() => {
+    if (!emojiPickerOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(e.target as Node)) {
+        setEmojiPickerOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [emojiPickerOpen])
+
+  const sortedReplyEmojis = useMemo(
+    () => [...FORUM_EMOJIS].sort((a, b) => (emojiUsage[b] ?? 0) - (emojiUsage[a] ?? 0)),
+    [emojiUsage]
+  )
 
   const handleSaveTopicEdit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -219,14 +425,21 @@ export function ForumTopicClient({ slug, topicId }: { slug: string; topicId: str
               </button>
             )}
           </div>
-          <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-zinc-400">
-            <span>{authorsMap[topic.user_id]?.display_name?.trim() || 'Участник'}</span>
-            <span>{formatDate(topic.created_at)}</span>
-            {topic.edited_at && (
-              <span className="text-zinc-500">Изменено {formatDate(topic.edited_at)}</span>
+          <div className="mt-2 flex items-center gap-3">
+            {avatarUrls[topic.user_id] ? (
+              <img
+                src={avatarUrls[topic.user_id]}
+                alt=""
+                className="h-9 w-9 shrink-0 rounded-full object-cover bg-[#1a2230]"
+              />
+            ) : (
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#1a2230] text-[11px] font-medium text-zinc-500">
+                {(authorsMap[topic.user_id]?.display_name?.trim() || '?')[0].toUpperCase()}
+              </div>
             )}
-            <span>{topic.views_count} просмотров</span>
-            <span>{topic.replies_count} комментариев</span>
+            <span className="text-sm font-medium text-zinc-200">
+              {authorsMap[topic.user_id]?.display_name?.trim() || 'Участник'}
+            </span>
           </div>
         </div>
 
@@ -271,8 +484,43 @@ export function ForumTopicClient({ slug, topicId }: { slug: string; topicId: str
             </form>
           </SurfaceCard>
         ) : (
-          <SurfaceCard className="p-5">
-            <article>{renderForumContent(topic.content)}</article>
+          <SurfaceCard className="p-5 min-w-0 overflow-x-auto">
+            <article className="min-w-0 break-words">{renderForumContent(topic.content)}</article>
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4 text-xs text-zinc-400">
+              <div className="flex items-center gap-4">
+                <span className="flex items-center gap-1">
+                  {user ? (
+                    <button
+                      type="button"
+                      onClick={toggleTopicLike}
+                      className="flex items-center gap-1 rounded p-0.5 text-zinc-400 hover:text-red-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                      aria-label={topicLikedByMe ? 'Убрать лайк' : 'Нравится'}
+                    >
+                      <Heart
+                        className={`h-4 w-4 ${topicLikedByMe ? 'fill-red-500 text-red-500' : ''}`}
+                        strokeWidth={2}
+                      />
+                    </button>
+                  ) : null}
+                  <span>{topicLikesCount}</span>
+                </span>
+                <span className="flex items-center gap-1" title="Просмотры">
+                  <Eye className="h-4 w-4" strokeWidth={2} />
+                  <span>{topic.views_count}</span>
+                </span>
+                <span className="flex items-center gap-1" title="Комментарии">
+                  <MessageCircle className="h-4 w-4" strokeWidth={2} />
+                  <span>{topic.replies_count}</span>
+                </span>
+              </div>
+              <div className="text-zinc-500">
+                {topic.edited_at ? (
+                  <span>Изменено {formatDate(topic.edited_at)}</span>
+                ) : (
+                  <span>{formatDate(topic.created_at)}</span>
+                )}
+              </div>
+            </div>
           </SurfaceCard>
         )}
 
@@ -281,7 +529,7 @@ export function ForumTopicClient({ slug, topicId }: { slug: string; topicId: str
             <h2 className="mb-2 text-sm font-medium text-zinc-400">Комментарии</h2>
             <ul className="flex flex-col gap-3">
               {posts.map((p) => (
-                <li key={p.id} className="rounded-2xl bg-[#141a22] px-5 py-4">
+                <li key={p.id} className="min-w-0 rounded-2xl bg-[#141a22] px-5 py-4">
                   <div className="flex items-center gap-3 text-xs text-zinc-400">
                     {avatarUrls[p.user_id] ? (
                       <img
@@ -294,44 +542,112 @@ export function ForumTopicClient({ slug, topicId }: { slug: string; topicId: str
                         {(authorsMap[p.user_id]?.display_name?.trim() || '?')[0].toUpperCase()}
                       </div>
                     )}
-                    <div className="min-w-0">
-                      <span className="font-medium text-zinc-200">{authorsMap[p.user_id]?.display_name?.trim() || 'Участник'}</span>
-                      <span className="ml-2">{formatDate(p.created_at)}</span>
-                    </div>
+                    <span className="font-medium text-zinc-200">{authorsMap[p.user_id]?.display_name?.trim() || 'Участник'}</span>
                   </div>
-                  <div className="mt-2">{renderForumContent(p.content)}</div>
+                  <div className="mt-2 min-w-0 break-words overflow-x-auto">{renderForumContent(p.content)}</div>
+                  <div className="mt-2 flex items-center justify-between border-t border-white/5 pt-2 text-xs text-zinc-500">
+                    <span className="flex items-center gap-1">
+                      {user ? (
+                        <button
+                          type="button"
+                          onClick={() => togglePostLike(p.id)}
+                          className="flex items-center gap-1 rounded p-0.5 text-zinc-400 hover:text-red-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                          aria-label={postLikedByMe[p.id] ? 'Убрать лайк' : 'Нравится'}
+                        >
+                          <Heart
+                            className={`h-4 w-4 ${postLikedByMe[p.id] ? 'fill-red-500 text-red-500' : ''}`}
+                            strokeWidth={2}
+                          />
+                        </button>
+                      ) : null}
+                      {(postLikesCount[p.id] ?? 0) > 0 && <span>{postLikesCount[p.id]}</span>}
+                    </span>
+                    <span>{formatTime(p.created_at)}</span>
+                  </div>
                 </li>
               ))}
             </ul>
           </section>
         )}
 
-        <form onSubmit={handleReply} className="flex flex-col gap-3">
-          <h2 className="text-sm font-medium text-zinc-400">Комментировать</h2>
-          <div className="flex flex-wrap items-center gap-2">
-            <ForumImageUpload
-              user={user}
-              imageUrls={replyImageUrls}
-              onInsertUrl={(url) => setReplyImageUrls((prev) => [...prev, url])}
-              onRemoveUrl={(url) => setReplyImageUrls((prev) => prev.filter((u) => u !== url))}
+        <form onSubmit={handleReply} className="mt-4">
+          {replyImageUrls.length > 0 && (
+            <ForumImagePreviewGrid
+              urls={replyImageUrls}
+              onRemove={(url) => setReplyImageUrls((prev) => prev.filter((u) => u !== url))}
               disabled={submitting}
+              className="mb-2"
             />
+          )}
+          {error && <p className="mb-2 text-sm text-red-400">{error}</p>}
+          <div className="relative flex items-end gap-1 rounded-2xl border border-white/10 bg-[#10161f] px-2 py-2" ref={emojiPickerRef}>
+            <button
+              type="button"
+              onClick={() => setEmojiPickerOpen((open) => !open)}
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-400 hover:bg-white/5 hover:text-zinc-200 ${emojiPickerOpen ? 'bg-white/10 text-zinc-200' : ''}`}
+              aria-label="Смайлик"
+              aria-expanded={emojiPickerOpen}
+            >
+              <Smile className="h-5 w-5" />
+            </button>
+            {emojiPickerOpen && (
+              <div className="absolute bottom-full left-0 z-20 mb-1 max-h-[240px] w-72 overflow-y-auto rounded-xl border border-white/10 bg-[#1a2230] p-2 shadow-lg [scrollbar-width:thin]">
+                <div className="grid grid-cols-8 gap-1">
+                  {sortedReplyEmojis.map((emoji, idx) => (
+                    <button
+                      key={`${idx}-${emoji}`}
+                      type="button"
+                      onClick={() => insertEmoji(emoji)}
+                      className="flex h-9 w-9 items-center justify-center rounded-lg text-xl hover:bg-white/10"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <textarea
+              ref={replyTextareaRef}
+              value={replyText}
+              onChange={(e) => {
+                setReplyText(e.target.value)
+                adjustReplyTextareaHeight()
+              }}
+              onFocus={adjustReplyTextareaHeight}
+              placeholder="Ваш комментарий..."
+              rows={1}
+              className="min-h-[40px] flex-1 resize-none bg-transparent px-2 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none"
+            />
+            <input
+              ref={replyFileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/gif,image/webp"
+              className="hidden"
+              onChange={onReplyAttach}
+              disabled={submitting || attaching}
+            />
+            {replyText.trim().length === 0 && replyImageUrls.length < 5 && (
+              <button
+                type="button"
+                onClick={() => replyFileInputRef.current?.click()}
+                disabled={submitting || attaching}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-400 hover:bg-white/5 hover:text-zinc-200 disabled:opacity-50"
+                aria-label="Прикрепить фото"
+              >
+                <Paperclip className="h-5 w-5" />
+              </button>
+            )}
+            {hasReplyContent && (
+              <button
+                type="submit"
+                disabled={submitting}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#2f6fed] text-white hover:bg-[#2563eb] disabled:opacity-50"
+                aria-label="Отправить"
+              >
+                <Send className="h-5 w-5" />
+              </button>
+            )}
           </div>
-          <textarea
-            value={replyText}
-            onChange={(e) => setReplyText(e.target.value)}
-            placeholder="Ваш комментарий..."
-            rows={4}
-            className="min-h-[80px] w-full resize-y rounded-2xl border border-white/10 bg-[#10161f] px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-          />
-          {error && <p className="text-sm text-red-400">{error}</p>}
-          <button
-            type="submit"
-            disabled={submitting}
-            className="rounded-2xl bg-[#2f6fed] px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50"
-          >
-            {submitting ? 'Отправка…' : 'Отправить'}
-          </button>
         </form>
 
         <BackButton fallbackHref={`/forum/${slug}`} className="mt-2 inline-flex items-center gap-2 text-sm text-zinc-300">

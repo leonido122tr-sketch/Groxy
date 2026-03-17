@@ -21,6 +21,7 @@ export async function handleOAuthCallbackUrl(url: string, router: AppRouterInsta
       try {
         await supabase.from('profiles').upsert(
           {
+            id: user.id,
             идентификатор: user.id,
             электронная_почта: user.email ?? '',
             отображаемое_имя:

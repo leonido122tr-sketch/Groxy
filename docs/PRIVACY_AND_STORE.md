@@ -2,13 +2,11 @@
 
 ## Разрешения (Android)
 
-В `android/app/src/main/AndroidManifest.xml` объявлены:
+В `android/app/src/main/AndroidManifest.xml` объявлено:
 
 - **INTERNET** — доступ в сеть (логин, форум, загрузка фото в Supabase).
-- **READ_MEDIA_IMAGES** — выбор изображений из галереи для загрузки в форум (Android 13+).
-- **READ_EXTERNAL_STORAGE** (maxSdkVersion 32) — то же для Android 12 и ниже.
 
-Доступа «ко всем файлам» (All files access) нет.
+Выбор изображений для форума реализован через системный выбор (Photo Picker / SAF), без объявления разрешений на хранилище/медиа. Доступа «ко всем файлам» (All files access) нет. Push-уведомления на Android 13+ могут требовать разрешение POST_NOTIFICATIONS (добавляется плагином Capacitor при сборке).
 
 ---
 

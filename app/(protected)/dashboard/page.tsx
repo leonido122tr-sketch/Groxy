@@ -19,6 +19,12 @@ const DASHBOARD_ITEMS: { href: string; title: string; description: string; image
     imageUrl: '/dashboard/my-projects.jpg',
   },
   {
+    href: '/forum',
+    title: 'Сообщество',
+    description: 'Обсуждения, вопросы и будущая экосистема специалистов и заказчиков.',
+    imageUrl: '/dashboard/community.jpg',
+  },
+  {
     href: '/materials/compare',
     title: 'Сравнение материалов',
     description: 'Сравнение характеристик и будущая аналитика по выбору материала.',
@@ -31,14 +37,8 @@ const DASHBOARD_ITEMS: { href: string; title: string; description: string; image
     imageUrl: '/dashboard/knowledge.jpg',
   },
   {
-    href: '/community',
-    title: 'Сообщество',
-    description: 'Обсуждения, вопросы и будущая экосистема специалистов и заказчиков.',
-    imageUrl: '/dashboard/community.jpg',
-  },
-  {
     href: '/support',
-    title: 'Поддержка',
+    title: 'Поддержка и сотрудничество',
     description: 'Написать о проблемах и пожеланиях',
     imageUrl: '/dashboard/support.jpg',
   },
