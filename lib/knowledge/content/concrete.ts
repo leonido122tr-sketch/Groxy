@@ -221,7 +221,11 @@ export const CONCRETE_CONTENT = `БЕТОН: ПОЛНОЕ РУКОВОДСТВО
 
 /** Парсит CONCRETE_CONTENT в 8 секций: заголовок, imageUrl, текст */
 function parseConcreteSections(): KnowledgeSection[] {
-  const blocks = CONCRETE_CONTENT.split(/\n\n(?=[1-8]\. )/)
+  const normalized = CONCRETE_CONTENT.replace(/\r\n?/g, '\n')
+  const blocks = normalized.split(/\n\n(?=[1-8]\. )/)
+  if (blocks.length <= 1) {
+    return [{ title: 'Бетон', imageUrl: '/knowledge/concrete.jpg', content: normalized.trim() }]
+  }
   const sectionBlocks = blocks.slice(1, 9)
   return sectionBlocks.map((block, i) => {
     const firstBreak = block.indexOf('\n\n')

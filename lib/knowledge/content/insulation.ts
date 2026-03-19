@@ -405,7 +405,17 @@ XPS: 0,028–0,032
 Для утепления труб: Скорлупы из каменной ваты (для горячих), вспененный каучук (для кондиционеров), вспененный полиэтилен (для водопровода).`
 
 function parseInsulationSections(): KnowledgeSection[] {
-  const blocks = INSULATION_CONTENT.split(/\n\n(?=[1-9]\. )/)
+  const normalized = INSULATION_CONTENT.replace(/\r\n?/g, '\n')
+  const blocks = normalized.split(/\n\n(?=[1-9]\. )/)
+  if (blocks.length <= 1) {
+    return [
+      {
+        title: 'Материалы для утепления',
+        imageUrl: '/knowledge/insulation.jpg',
+        content: normalized.trim(),
+      },
+    ]
+  }
   return blocks.slice(1, 10).map((block, i) => {
     const firstBreak = block.indexOf('\n\n')
     const title = firstBreak > 0 ? block.slice(0, firstBreak).trim() : block.split('\n')[0]?.trim() ?? ''

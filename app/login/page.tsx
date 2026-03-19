@@ -173,10 +173,19 @@ export default function LoginPage() {
   return (
     <AppPage width="md" className="justify-center py-6">
       <div className="space-y-4">
-        <SurfaceCard className="p-4">
-          <div className="flex items-center gap-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-[22px] bg-[#1a2230]">
-              <Image src="/logo.png" alt="Groxy" width={40} height={40} className="h-10 w-10 rounded-2xl object-contain" />
+        <SurfaceCard className="relative overflow-hidden p-0">
+          <img src="/login/login-account.jpg" alt="" className="absolute inset-0 h-full w-full object-cover opacity-50" aria-hidden />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#121922]/95 via-[#121922]/75 to-[#121922]/50" aria-hidden />
+          <div className="relative z-10 flex items-center gap-4 p-4">
+            <div className="inline-flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full bg-transparent">
+              <Image
+                src="/logo.png"
+                alt="Groxy"
+                width={128}
+                height={128}
+                sizes="64px"
+                className="h-full w-full rounded-full object-cover"
+              />
             </div>
             <div>
               <p className="text-sm font-medium text-zinc-400">Вход в аккаунт</p>
@@ -186,11 +195,11 @@ export default function LoginPage() {
           </div>
         </SurfaceCard>
 
-        <SurfaceCard accent className="p-5">
+        <SurfaceCard accent className="relative overflow-hidden p-0">
+          <img src="/login/login-system.jpg" alt="" className="absolute inset-0 h-full w-full object-cover opacity-50" aria-hidden />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#121922]/95 via-[#121922]/75 to-[#121922]/50" aria-hidden />
+          <div className="relative z-10 p-5">
           <div className="mb-8 text-center">
-            <div className="mb-4 inline-flex h-16 w-16 items-center justify-center overflow-hidden rounded-[24px] bg-[#1a2230]">
-              <Image src="/logo.png" alt="Groxy" width={56} height={56} className="h-12 w-12 object-contain" />
-            </div>
             <h1 className="text-2xl font-semibold tracking-[-0.03em] text-white">
               Вход в систему
             </h1>
@@ -290,6 +299,7 @@ export default function LoginPage() {
               {' · '}
               <Link href="/terms" className="hover:text-zinc-400">Условия использования</Link>
             </p>
+          </div>
           </div>
         </SurfaceCard>
       </div>

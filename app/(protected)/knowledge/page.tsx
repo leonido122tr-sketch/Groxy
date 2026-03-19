@@ -25,8 +25,10 @@ export default function KnowledgePage() {
   return (
     <AppPage header={<AppHeader />} width="md" className="py-5">
       <div className="space-y-4">
-        <SurfaceCard className="p-5">
-          <div className="flex items-start gap-3">
+        <SurfaceCard className="relative overflow-hidden p-0">
+          <img src="/dashboard/knowledge-hero.jpg" alt="" className="absolute inset-0 h-full w-full object-cover opacity-50" aria-hidden />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#121922]/95 via-[#121922]/75 to-[#121922]/50" aria-hidden />
+          <div className="relative z-10 flex items-start gap-3 p-5">
             <IconBadge tone="amber" size="sm">
               <KnowledgeIcon className="h-5 w-5" />
             </IconBadge>

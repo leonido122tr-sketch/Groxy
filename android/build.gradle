@@ -24,6 +24,13 @@ allprojects {
     }
 }
 
+// Обход ошибки writeReleaseLintModelMetadata в capacitor-push-notifications (Gradle 8 + AGP)
+subprojects { subproject ->
+    subproject.afterEvaluate {
+        subproject.tasks.findByName("writeReleaseLintModelMetadata")?.doNotTrackState("Lint metadata task has flaky output")
+    }
+}
+
 // Настройка Java toolchain для использования Java 21
 subprojects {
     afterEvaluate { project ->

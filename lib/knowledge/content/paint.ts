@@ -257,7 +257,17 @@ export const PAINT_CONTENT = `Лакокрасочные материалы (Л�
 Несоблюдение техники безопасности: Работа без респиратора с токсичными красками в закрытом помещении.`
 
 function parsePaintSections(): KnowledgeSection[] {
-  const blocks = PAINT_CONTENT.split(/\n\n(?=[1-5]\. )/)
+  const normalized = PAINT_CONTENT.replace(/\r\n?/g, '\n')
+  const blocks = normalized.split(/\n\n(?=[1-5]\. )/)
+  if (blocks.length <= 1) {
+    return [
+      {
+        title: 'Лакокрасочные материалы',
+        imageUrl: '/knowledge/paint.jpg',
+        content: normalized.trim(),
+      },
+    ]
+  }
   return blocks.slice(1, 6).map((block, i) => {
     const firstBreak = block.indexOf('\n\n')
     const title = firstBreak > 0 ? block.slice(0, firstBreak).trim() : block.split('\n')[0]?.trim() ?? ''

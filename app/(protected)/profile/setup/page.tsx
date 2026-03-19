@@ -12,7 +12,7 @@ import { BackIcon, IconBadge, UserFormIcon } from '@/app/components/AppIcons'
 import { uploadAvatar, getAvatarDisplayUrl } from '@/lib/avatar/uploadAvatar'
 
 /** Логин в UI = колонка profiles.отображаемое_имя в Supabase */
-type ProfileRow = { отображаемое_имя?: string | null; аватар?: string | null; город?: string | null; push_notifications_enabled?: boolean }
+type ProfileRow = { отображаемое_имя?: string | null; аватар?: string | null; город?: string | null }
 
 type CityOption = { name: string; region: string | null }
 
@@ -31,7 +31,6 @@ export default function ProfileSetupPage() {
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
   const [avatarRemoved, setAvatarRemoved] = useState(false)
-  const [pushEnabled, setPushEnabled] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [user, setUser] = useState<{ id: string; email?: string } | null>(null)
@@ -50,11 +49,10 @@ export default function ProfileSetupPage() {
         else {
           const { data: profile } = await supabase
             .from('profiles')
-            .select('отображаемое_имя, аватар, город, push_notifications_enabled')
+            .select('отображаемое_имя, аватар, город')
             .eq('идентификатор', u.id)
             .single()
           const row = profile as ProfileRow | null
-          setPushEnabled(row?.push_notifications_enabled ?? true)
           // Источник истины для «Логин» — profiles.отображаемое_имя; fallback — Auth full_name
           setFullName(
             row?.отображаемое_имя?.trim() || (u.user_metadata?.full_name as string)?.trim() || ''
@@ -131,7 +129,6 @@ export default function ProfileSetupPage() {
             электронная_почта: trimmedEmail,
             аватар: finalAvatarUrl,
             город: city.trim() || null,
-            push_notifications_enabled: pushEnabled,
             обновлено_в: new Date().toISOString(),
           },
           { onConflict: 'идентификатор' }
@@ -237,7 +234,10 @@ export default function ProfileSetupPage() {
 
   return (
     <AppPage width="md" className="justify-center py-6">
-      <SurfaceCard accent className="p-5">
+      <SurfaceCard accent className="relative overflow-hidden p-0">
+        <img src="/dashboard/profile-settings-hero.jpg" alt="" className="absolute inset-0 h-full w-full object-cover opacity-50" aria-hidden />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#121922]/95 via-[#121922]/75 to-[#121922]/50" aria-hidden />
+        <div className="relative z-10 p-5">
           <div className="mb-6 text-center">
             <div className="mb-3 flex justify-center">
               {showAvatar ? (
@@ -375,22 +375,6 @@ export default function ProfileSetupPage() {
               )}
             </div>
 
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2.5">
-              <label htmlFor="push-enabled" className="cursor-pointer text-sm font-medium text-zinc-200">
-                Уведомления на устройстве
-              </label>
-              <input
-                id="push-enabled"
-                type="checkbox"
-                checked={pushEnabled}
-                onChange={(e) => setPushEnabled(e.target.checked)}
-                className="h-4 w-4 rounded border-white/20 bg-[#1a2230] text-blue-500 focus:ring-2 focus:ring-blue-500/30"
-              />
-            </div>
-            <p className="text-xs text-zinc-500">
-              Включите, чтобы получать push-уведомления о новых комментариях в ваших темах на форуме. Список уведомлений всегда доступен по иконке в шапке.
-            </p>
-
             <button type="submit" disabled={loading} className="btn-primary btn-hover">
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
@@ -420,6 +404,7 @@ export default function ProfileSetupPage() {
               Пропустить →
             </Link>
           </p>
+        </div>
       </SurfaceCard>
     </AppPage>
   )

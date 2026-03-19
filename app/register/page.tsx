@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { Alert } from '@/app/components/Alert'
@@ -9,10 +10,6 @@ import { AppPage, SurfaceCard } from '@/app/components/AppShell'
 import { BackButton } from '@/app/components/BackButton'
 import {
   BackIcon,
-  IconBadge,
-  SignupIcon,
-  StackIcon,
-  VerifyIcon,
 } from '@/app/components/AppIcons'
 
 export default function RegisterPage() {
@@ -234,36 +231,20 @@ export default function RegisterPage() {
   return (
     <AppPage width="md" className="justify-center py-6">
       <div className="space-y-4">
-        <div className="grid gap-3">
-          <SurfaceCard className="p-4">
-            <div className="flex items-start gap-3">
-              <IconBadge tone="violet" size="sm">
-                <SignupIcon className="h-5 w-5" />
-              </IconBadge>
-              <div>
-                <p className="text-sm font-semibold text-white">Новый аккаунт</p>
-                <p className="mt-1 text-sm leading-6 text-zinc-300">Создайте аккаунт, чтобы сохранять проекты и работать с данными в Groxy.</p>
-              </div>
-            </div>
-          </SurfaceCard>
-          <SurfaceCard className="p-4">
-            <div className="flex items-start gap-3">
-              <IconBadge tone="blue" size="sm">
-                <StackIcon className="h-5 w-5" />
-              </IconBadge>
-              <div>
-                <p className="text-sm font-semibold text-white">Рабочая среда</p>
-                <p className="mt-1 text-sm leading-6 text-zinc-300">Проекты, расчёты, материалы и знания будут связаны внутри одной платформы.</p>
-              </div>
-            </div>
-          </SurfaceCard>
-        </div>
-
-        <SurfaceCard accent className="p-5">
+        <SurfaceCard accent className="relative overflow-hidden p-0">
+          <img src="/register/register-account.jpg" alt="" className="absolute inset-0 h-full w-full object-cover opacity-50" aria-hidden />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#121922]/95 via-[#121922]/75 to-[#121922]/50" aria-hidden />
+          <div className="relative z-10 p-5">
           <div className="mb-6 text-center">
-            <IconBadge tone="violet" size="lg" className="mb-3 inline-flex">
-              <VerifyIcon className="h-7 w-7" />
-            </IconBadge>
+            <div className="mb-3 inline-flex h-16 w-16 items-center justify-center overflow-hidden rounded-full bg-transparent">
+              <Image
+                src="/logo.png"
+                alt="Groxy"
+                width={64}
+                height={64}
+                className="h-full w-full rounded-full object-cover"
+              />
+            </div>
             <h1 className="text-2xl font-semibold text-white">
               {step === 'register' ? 'Регистрация' : 'Подтверждение'}
             </h1>
@@ -469,6 +450,7 @@ export default function RegisterPage() {
               {' · '}
               <Link href="/terms" className="hover:text-zinc-400">Условия использования</Link>
             </p>
+          </div>
           </div>
         </SurfaceCard>
       </div>

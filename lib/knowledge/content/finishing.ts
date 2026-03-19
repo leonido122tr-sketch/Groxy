@@ -366,7 +366,17 @@ export const FINISHING_CONTENT = `Отделочные материалы — э
 Использование материалов для внутренних работ на фасаде (разрушатся).`
 
 function parseFinishingSections(): KnowledgeSection[] {
-  const blocks = FINISHING_CONTENT.split(/\n\n(?=[1-9]\. )/)
+  const normalized = FINISHING_CONTENT.replace(/\r\n?/g, '\n')
+  const blocks = normalized.split(/\n\n(?=[1-9]\. )/)
+  if (blocks.length <= 1) {
+    return [
+      {
+        title: 'Отделочные материалы',
+        imageUrl: '/knowledge/finishing.jpg',
+        content: normalized.trim(),
+      },
+    ]
+  }
   return blocks.slice(1, 10).map((block, i) => {
     const firstBreak = block.indexOf('\n\n')
     const title = firstBreak > 0 ? block.slice(0, firstBreak).trim() : block.split('\n')[0]?.trim() ?? ''

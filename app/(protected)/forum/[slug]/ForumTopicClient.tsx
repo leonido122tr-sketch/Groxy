@@ -14,10 +14,12 @@ import { FORUM_EMOJI_USAGE_KEY, FORUM_EMOJIS } from '@/lib/forum/forumEmoji'
 import { getAvatarDisplayUrl } from '@/lib/avatar/uploadAvatar'
 import { uploadForumImage } from '@/lib/forum/uploadForumImage'
 import { ForumImagePreviewGrid } from '@/app/(protected)/forum/components/ForumImagePreviewGrid'
+import { ForumImageUpload } from '@/app/(protected)/forum/components/ForumImageUpload'
 import { useAuth } from '@/lib/auth/AuthContext'
 import type { ForumCategory } from '@/lib/forum/types'
 import type { ForumTopic } from '@/lib/forum/types'
 import type { ForumPost } from '@/lib/forum/types'
+import type { ForumTopicSupplement } from '@/lib/forum/types'
 
 type AuthorInfo = { display_name: string | null; email: string | null; avatar: string | null }
 /** Столбцы public.profiles в БД — русские имена */
@@ -52,10 +54,11 @@ export function ForumTopicClient({ slug, topicId }: { slug: string; topicId: str
   const [replyImageUrls, setReplyImageUrls] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [isEditingTopic, setIsEditingTopic] = useState(false)
-  const [editContent, setEditContent] = useState('')
-  const [editImageUrls, setEditImageUrls] = useState<string[]>([])
-  const [savingEdit, setSavingEdit] = useState(false)
+  const [supplements, setSupplements] = useState<ForumTopicSupplement[]>([])
+  const [isAddingSupplement, setIsAddingSupplement] = useState(false)
+  const [supplementContent, setSupplementContent] = useState('')
+  const [supplementImageUrls, setSupplementImageUrls] = useState<string[]>([])
+  const [savingSupplement, setSavingSupplement] = useState(false)
   const [attaching, setAttaching] = useState(false)
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
   const [emojiUsage, setEmojiUsage] = useState<Record<string, number>>({})
@@ -85,10 +88,13 @@ export function ForumTopicClient({ slug, topicId }: { slug: string; topicId: str
     Promise.all([
       supabase.from('forum_topics').select('*').eq('id', topicId).single(),
       supabase.from('forum_posts').select('*').eq('topic_id', topicId).order('created_at', { ascending: true }),
-    ]).then(async ([topicRes, postsRes]) => {
+      supabase.from('forum_topic_supplements').select('*').eq('topic_id', topicId).order('created_at', { ascending: true }),
+    ]).then(async ([topicRes, postsRes, supplementsRes]) => {
       if (cancelled) return
       const topicData = !topicRes.error && topicRes.data ? (topicRes.data as ForumTopic) : null
       const postsData = postsRes.data ? (postsRes.data as ForumPost[]) : []
+      const supplementsData = supplementsRes.data ? (supplementsRes.data as ForumTopicSupplement[]) : []
+      if (!cancelled) setSupplements(supplementsData)
       if (topicData) {
         setTopic({ ...topicData, replies_count: postsData.length })
         supabase.rpc('increment_forum_topic_views', { tid: topicId }).then(() => {})
@@ -256,17 +262,15 @@ export function ForumTopicClient({ slug, topicId }: { slug: string; topicId: str
     }
   }, [user, postLikedByMe])
 
-  const startEditTopic = () => {
-    if (!topic) return
-    const { text, imageUrls } = parseContent(topic.content)
-    setEditContent(text)
-    setEditImageUrls(imageUrls)
-    setIsEditingTopic(true)
+  const startAddSupplement = () => {
+    setSupplementContent('')
+    setSupplementImageUrls([])
+    setIsAddingSupplement(true)
     setError(null)
   }
 
-  const cancelEditTopic = () => {
-    setIsEditingTopic(false)
+  const cancelAddSupplement = () => {
+    setIsAddingSupplement(false)
     setError(null)
   }
 
@@ -354,40 +358,48 @@ export function ForumTopicClient({ slug, topicId }: { slug: string; topicId: str
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [emojiPickerOpen])
 
+  useEffect(() => {
+    if (typeof window === 'undefined' || !topic || loading) return
+    if (window.location.hash !== '#comments') return
+    const t = setTimeout(() => {
+      document.getElementById('comments')?.scrollIntoView({ behavior: 'smooth' })
+    }, 100)
+    return () => clearTimeout(t)
+  }, [topic, loading])
+
   const sortedReplyEmojis = useMemo(
     () => [...FORUM_EMOJIS].sort((a, b) => (emojiUsage[b] ?? 0) - (emojiUsage[a] ?? 0)),
     [emojiUsage]
   )
 
-  const handleSaveTopicEdit = async (e: React.FormEvent) => {
+  const handleSaveSupplement = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!user || !topic || user.id !== topic.user_id) return
-    const text = editContent.trim()
+    const text = supplementContent.trim()
     if (!text) {
-      setError('Введите текст темы.')
+      setError('Введите текст дополнения.')
       return
     }
-    setSavingEdit(true)
+    setSavingSupplement(true)
     setError(null)
-    const content = editImageUrls.length
-      ? text + CONTENT_IMAGES_DELIMITER + editImageUrls.join('\n')
+    const content = supplementImageUrls.length
+      ? text + CONTENT_IMAGES_DELIMITER + supplementImageUrls.join('\n')
       : text
     const supabase = createClient()
-    const now = new Date().toISOString()
-    const { data, error: updateError } = await supabase
-      .from('forum_topics')
-      .update({ content, updated_at: now, edited_at: now })
-      .eq('id', topic.id)
-      .eq('user_id', user.id)
+    const { data, error: insertError } = await supabase
+      .from('forum_topic_supplements')
+      .insert({ topic_id: topic.id, user_id: user.id, content })
       .select()
       .single()
-    setSavingEdit(false)
-    if (updateError) {
-      setError(updateError.message || 'Не удалось сохранить изменения.')
+    setSavingSupplement(false)
+    if (insertError) {
+      setError(insertError.message || 'Не удалось сохранить дополнение.')
       return
     }
-    if (data) setTopic(data as ForumTopic)
-    setIsEditingTopic(false)
+    if (data) setSupplements((prev) => [...prev, data as ForumTopicSupplement])
+    setIsAddingSupplement(false)
+    setSupplementContent('')
+    setSupplementImageUrls([])
   }
 
   if (loading) return <PageLoader />
@@ -415,13 +427,13 @@ export function ForumTopicClient({ slug, topicId }: { slug: string; topicId: str
           </BackButton>
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
             <h1 className="text-xl font-semibold text-white">{topic.title}</h1>
-            {user?.id === topic.user_id && !isEditingTopic && (
+            {user?.id === topic.user_id && !isAddingSupplement && (
               <button
                 type="button"
-                onClick={startEditTopic}
+                onClick={startAddSupplement}
                 className="rounded-xl border border-white/20 bg-[#1a2230] px-3 py-1.5 text-sm font-medium text-zinc-300 hover:bg-[#243040]"
               >
-                Редактировать
+                Дополнить
               </button>
             )}
           </div>
@@ -443,22 +455,22 @@ export function ForumTopicClient({ slug, topicId }: { slug: string; topicId: str
           </div>
         </div>
 
-        {isEditingTopic ? (
+        {isAddingSupplement ? (
           <SurfaceCard className="p-5">
-            <form onSubmit={handleSaveTopicEdit} className="space-y-4">
+            <form onSubmit={handleSaveSupplement} className="space-y-4">
               <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-300">Текст и фото</label>
+                <label className="mb-1 block text-sm font-medium text-zinc-300">Текст и фото дополнения</label>
                 <ForumImageUpload
                   user={user}
-                  imageUrls={editImageUrls}
-                  onInsertUrl={(url) => setEditImageUrls((prev) => [...prev, url])}
-                  onRemoveUrl={(url) => setEditImageUrls((prev) => prev.filter((u) => u !== url))}
-                  disabled={savingEdit}
+                  imageUrls={supplementImageUrls}
+                  onInsertUrl={(url) => setSupplementImageUrls((prev) => [...prev, url])}
+                  onRemoveUrl={(url) => setSupplementImageUrls((prev) => prev.filter((u) => u !== url))}
+                  disabled={savingSupplement}
                 />
                 <textarea
-                  value={editContent}
-                  onChange={(e) => setEditContent(e.target.value)}
-                  placeholder="Текст темы..."
+                  value={supplementContent}
+                  onChange={(e) => setSupplementContent(e.target.value)}
+                  placeholder="Добавьте текст к теме..."
                   rows={6}
                   className="mt-2 min-h-[120px] w-full resize-y rounded-2xl border border-white/10 bg-[#10161f] px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
@@ -467,15 +479,15 @@ export function ForumTopicClient({ slug, topicId }: { slug: string; topicId: str
               <div className="flex gap-2">
                 <button
                   type="submit"
-                  disabled={savingEdit}
+                  disabled={savingSupplement}
                   className="rounded-2xl bg-[#2f6fed] px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50"
                 >
-                  {savingEdit ? 'Сохранение…' : 'Сохранить'}
+                  {savingSupplement ? 'Сохранение…' : 'Дополнить'}
                 </button>
                 <button
                   type="button"
-                  onClick={cancelEditTopic}
-                  disabled={savingEdit}
+                  onClick={cancelAddSupplement}
+                  disabled={savingSupplement}
                   className="rounded-2xl border border-white/20 bg-[#1a2230] px-5 py-2.5 text-sm font-medium text-zinc-300 hover:bg-[#243040] disabled:opacity-50"
                 >
                   Отмена
@@ -483,10 +495,21 @@ export function ForumTopicClient({ slug, topicId }: { slug: string; topicId: str
               </div>
             </form>
           </SurfaceCard>
-        ) : (
-          <SurfaceCard className="p-5 min-w-0 overflow-x-auto">
-            <article className="min-w-0 break-words">{renderForumContent(topic.content)}</article>
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4 text-xs text-zinc-400">
+        ) : null}
+
+        <SurfaceCard className="p-5 min-w-0 overflow-x-auto">
+          <article className="min-w-0 break-words">{renderForumContent(topic.content)}</article>
+          {supplements.length > 0 && (
+            <div className="mt-6 space-y-4 border-t border-white/10 pt-4">
+              {supplements.map((sup) => (
+                <div key={sup.id} className="min-w-0 break-words">
+                  <p className="mb-2 text-xs font-medium text-zinc-500">Дополнено ({formatDate(sup.created_at)})</p>
+                  <div className="text-sm text-zinc-200">{renderForumContent(sup.content)}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4 text-xs text-zinc-400">
               <div className="flex items-center gap-4">
                 <span className="flex items-center gap-1">
                   {user ? (
@@ -521,9 +544,9 @@ export function ForumTopicClient({ slug, topicId }: { slug: string; topicId: str
                 )}
               </div>
             </div>
-          </SurfaceCard>
-        )}
+        </SurfaceCard>
 
+        <div id="comments">
         {posts.length > 0 && (
           <section>
             <h2 className="mb-2 text-sm font-medium text-zinc-400">Комментарии</h2>
@@ -649,6 +672,7 @@ export function ForumTopicClient({ slug, topicId }: { slug: string; topicId: str
             )}
           </div>
         </form>
+        </div>
 
         <BackButton fallbackHref={`/forum/${slug}`} className="mt-2 inline-flex items-center gap-2 text-sm text-zinc-300">
           <BackIcon className="h-4 w-4" />

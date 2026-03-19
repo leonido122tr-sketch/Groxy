@@ -303,7 +303,17 @@ export const ROOF_CONTENT = `КРОВЛЯ И ГИДРОИЗОЛЯЦИЯ: ПОЛ�
 Для ванной — полимерная обмазочная гидроизоляция с обязательной проклейкой углов.`
 
 function parseRoofSections(): KnowledgeSection[] {
-  const blocks = ROOF_CONTENT.split(/\n\n(?=[1-8]\. )/)
+  const normalized = ROOF_CONTENT.replace(/\r\n?/g, '\n')
+  const blocks = normalized.split(/\n\n(?=[1-8]\. )/)
+  if (blocks.length <= 1) {
+    return [
+      {
+        title: 'Кровля и гидроизоляция',
+        imageUrl: '/knowledge/roof.jpg',
+        content: normalized.trim(),
+      },
+    ]
+  }
   return blocks.slice(1, 9).map((block, i) => {
     const firstBreak = block.indexOf('\n\n')
     const title = firstBreak > 0 ? block.slice(0, firstBreak).trim() : block.split('\n')[0]?.trim() ?? ''

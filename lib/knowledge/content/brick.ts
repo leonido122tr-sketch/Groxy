@@ -530,7 +530,17 @@ export const BRICK_CONTENT = `КИРПИЧ И КЛАДОЧНЫЕ МАТЕРИА�
 Всегда соблюдайте технологию и не торопитесь.`
 
 function parseBrickSections(): KnowledgeSection[] {
-  const blocks = BRICK_CONTENT.split(/\n\n(?=[1-6]\. )/)
+  const normalized = BRICK_CONTENT.replace(/\r\n?/g, '\n')
+  const blocks = normalized.split(/\n\n(?=[1-6]\. )/)
+  if (blocks.length <= 1) {
+    return [
+      {
+        title: 'Кирпич и кладочные материалы',
+        imageUrl: '/knowledge/brick.jpg',
+        content: normalized.trim(),
+      },
+    ]
+  }
   return blocks.slice(1, 7).map((block, i) => {
     const firstBreak = block.indexOf('\n\n')
     const title = firstBreak > 0 ? block.slice(0, firstBreak).trim() : block.split('\n')[0]?.trim() ?? ''

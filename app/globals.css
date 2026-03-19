@@ -102,6 +102,22 @@ body.native-app {
   padding-bottom: var(--safe-bottom);
 }
 
+/* Переход между страницами: fade + лёгкий сдвиг вверх */
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-page-in {
+  animation: page-in 0.2s ease-out forwards;
+}
+
 /* Android WebView sometimes reports 0 safe inset — add minimum top padding. */
 .native-app .pt-safe {
   padding-top: max(var(--safe-top), 24px);

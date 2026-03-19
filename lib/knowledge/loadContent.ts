@@ -28,6 +28,8 @@ export async function loadKnowledgeContent(slug: string): Promise<string | Knowl
       return (await import('@/lib/knowledge/content/insulation')).INSULATION_SECTIONS
     case 'metal':
       return (await import('@/lib/knowledge/content/metal')).METAL_SECTIONS
+    case 'standards':
+      return (await import('@/lib/knowledge/content/standards')).STANDARDS_CONTENT
     default:
       return null
   }

@@ -391,7 +391,11 @@ XPS (экструдированный пенополистирол): Лучши�
 Если бюджет ограничен, а грунт плохой — винтовые сваи (самый быстрый и относительно недорогой вариант, но с учётом ограничений по долговечности).`
 
 function parseFoundationSections(): KnowledgeSection[] {
-  const blocks = FOUNDATION_CONTENT.split(/\n\n(?=[1-9]\. )/)
+  const normalized = FOUNDATION_CONTENT.replace(/\r\n?/g, '\n')
+  const blocks = normalized.split(/\n\n(?=[1-9]\. )/)
+  if (blocks.length <= 1) {
+    return [{ title: 'Фундаменты', imageUrl: '/knowledge/foundation.jpg', content: normalized.trim() }]
+  }
   return blocks.slice(1, 10).map((block, i) => {
     const firstBreak = block.indexOf('\n\n')
     const title = firstBreak > 0 ? block.slice(0, firstBreak).trim() : block.split('\n')[0]?.trim() ?? ''

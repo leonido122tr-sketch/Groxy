@@ -10,8 +10,14 @@ export function PageLoader({ message = 'Загрузка...' }: { message?: stri
         <div className="flex flex-col items-center gap-5">
           <div className="relative flex h-16 w-16 items-center justify-center">
             <div className="absolute inset-0 animate-spin rounded-full border-2 border-white/10 border-t-cyan-300" />
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/8">
-              <Image src="/logo.png" alt="Groxy" width={32} height={32} className="h-8 w-8 object-contain" />
+              <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-transparent">
+                <Image
+                  src="/logo.png"
+                  alt="Groxy"
+                  width={32}
+                  height={32}
+                  className="h-full w-full rounded-full object-cover"
+                />
             </div>
           </div>
           <div className="space-y-2">

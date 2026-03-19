@@ -6,6 +6,7 @@ import { SupabaseNetworkErrorHandler } from "./components/SupabaseNetworkErrorHa
 import { AuthDeepLinkHandler } from "./components/AuthDeepLinkHandler";
 import { NativeLaunchGate } from "./components/NativeLaunchGate";
 import { GlobalPdfViewerHostDynamic } from "./components/GlobalPdfViewerHostDynamic";
+import { PageTransition } from "./components/PageTransition";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -40,7 +41,7 @@ export default function RootLayout({
       >
         <script
           dangerouslySetInnerHTML={{
-            __html: `window.addEventListener('unhandledrejection',function(e){var r=e.reason;var m=r&&r.message!==undefined?r.message:String(r);var authErr=r&&(r.name==='AuthRetryableFetchError'||(r.constructor&&r.constructor.name==='AuthRetryableFetchError'));var isFetchErr=m==='Failed to fetch'||(typeof m==='string'&&m.indexOf('fetch')!==-1);if(isFetchErr||authErr){e.preventDefault();e.stopImmediatePropagation();console.warn('Сеть недоступна (Supabase Auth). Проверьте интернет или настройки Supabase.');}},true);`,
+            __html: `window.addEventListener('unhandledrejection',function(e){var r=e.reason;var m=r&&r.message!==undefined?r.message:String(r);var authErr=r&&(r.name==='AuthRetryableFetchError'||(r.constructor&&r.constructor.name==='AuthRetryableFetchError'));var isFetchErr=m==='Failed to fetch'||m==='SupabaseNetworkError'||(typeof m==='string'&&m.indexOf('fetch')!==-1);if(isFetchErr||authErr){e.preventDefault();e.stopImmediatePropagation();console.warn('Сеть недоступна (Supabase Auth). Проверьте интернет или настройки Supabase.');}},true);`,
           }}
         />
         <StatusBarInit />
@@ -49,7 +50,9 @@ export default function RootLayout({
           <AuthDeepLinkHandler />
           <GlobalPdfViewerHostDynamic />
           <div className="app-shell">
-            <div className="app-scroll">{children}</div>
+            <div className="app-scroll">
+              <PageTransition>{children}</PageTransition>
+            </div>
           </div>
         </NativeLaunchGate>
       </body>

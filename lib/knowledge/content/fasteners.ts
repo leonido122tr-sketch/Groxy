@@ -201,7 +201,11 @@ export const FASTENERS_CONTENT = `Крепёжные изделия (метиз�
 Экономия на крепеже для ответственных узлов (перила, лестницы).`
 
 function parseFastenersSections(): KnowledgeSection[] {
-  const blocks = FASTENERS_CONTENT.split(/\n\n(?=(?:10|[1-9])\. )/)
+  const normalized = FASTENERS_CONTENT.replace(/\r\n?/g, '\n')
+  const blocks = normalized.split(/\n\n(?=(?:10|[1-9])\. )/)
+  if (blocks.length <= 1) {
+    return [{ title: 'Крепёж и метизы', imageUrl: '/knowledge/fasteners.jpg', content: normalized.trim() }]
+  }
   return blocks.slice(1, 11).map((block, i) => {
     const firstBreak = block.indexOf('\n\n')
     const title = firstBreak > 0 ? block.slice(0, firstBreak).trim() : block.split('\n')[0]?.trim() ?? ''

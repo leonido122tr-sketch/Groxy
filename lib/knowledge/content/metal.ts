@@ -349,7 +349,11 @@ AISI 316 (10Х17Н13М2): С добавлением молибдена. Очен
 
 /** Парсит METAL_CONTENT в 7 секций: заголовок, imageUrl, текст */
 function parseMetalSections(): KnowledgeSection[] {
-  const blocks = METAL_CONTENT.split(/\n\n(?=[1-7]\. )/)
+  const normalized = METAL_CONTENT.replace(/\r\n?/g, '\n')
+  const blocks = normalized.split(/\n\n(?=[1-7]\. )/)
+  if (blocks.length <= 1) {
+    return [{ title: 'Металл', imageUrl: '/knowledge/metal.jpg', content: normalized.trim() }]
+  }
   const sectionBlocks = blocks.slice(1, 8)
   return sectionBlocks.map((block, i) => {
     const firstBreak = block.indexOf('\n\n')

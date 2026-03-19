@@ -378,7 +378,11 @@ OSB (ОСП — ориентированно-стружечная плита):
 Длинномеры (доски, брус) нужно перевозить так, чтобы они не болтались и не терлись друг о друга на кочках — это может повредить поверхность и даже сломать материал. Используй стяжные ремни.`
 
 function parseWoodSections(): KnowledgeSection[] {
-  const blocks = WOOD_CONTENT.split(/\n\n(?=[1-7]\. )/)
+  const normalized = WOOD_CONTENT.replace(/\r\n?/g, '\n')
+  const blocks = normalized.split(/\n\n(?=[1-7]\. )/)
+  if (blocks.length <= 1) {
+    return [{ title: 'Дерево', imageUrl: '/knowledge/wood.jpg', content: normalized.trim() }]
+  }
   return blocks.slice(1, 8).map((block, i) => {
     const firstBreak = block.indexOf('\n\n')
     const title = firstBreak > 0 ? block.slice(0, firstBreak).trim() : block.split('\n')[0]?.trim() ?? ''

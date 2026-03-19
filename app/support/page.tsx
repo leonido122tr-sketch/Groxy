@@ -90,7 +90,9 @@ export default function SupportPage() {
           </BackButton>
         </p>
 
-        <SurfaceCard className="p-5">
+        <SurfaceCard className="relative overflow-hidden p-5 bg-cover bg-center bg-no-repeat" style={{ backgroundImage: 'url(/feedback-block-full.png)' }}>
+          <div className="absolute inset-0 bg-[#0b0f14]/85" aria-hidden />
+          <div className="relative z-10">
           <h1 className="text-xl font-semibold text-white">Обратная связь</h1>
           <p className="mt-1 text-sm text-zinc-300">
             Опишите проблему, пожелание или вопрос. Укажите контакт для ответа (по желанию).
@@ -165,6 +167,7 @@ export default function SupportPage() {
               )}
             </button>
           </form>
+          </div>
         </SurfaceCard>
       </div>
     </AppPage>

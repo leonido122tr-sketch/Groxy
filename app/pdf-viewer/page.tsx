@@ -268,7 +268,7 @@ function PdfViewerContent() {
     const yyyy = now.getFullYear()
     const nameForShare = `${baseName}_${dd}-${mm}-${yyyy}.pdf`
     const shareSubject = `Расчёт по проекту — ${baseName}`
-    const shareText = 'Во вложении расчёт по проекту. Сформировано в приложении Groxy. Скачать приложение: https://www.rustore.ru/catalog/app/com.groxy.app'
+    const shareText = 'Во вложении расчёт по проекту. Сформировано в приложении Groxy. Скачать приложение:\nGoogle Play: https://play.google.com/store/apps/details?id=com.groxy.app\nRuStore: https://www.rustore.ru/catalog/app/com.groxy.app'
 
     try {
       if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {

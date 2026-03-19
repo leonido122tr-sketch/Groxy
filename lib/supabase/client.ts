@@ -9,6 +9,7 @@ export function isSupabaseNetworkError(err: unknown): boolean {
   const name = err instanceof Error ? (err as Error & { name?: string }).name : ''
   return (
     msg === 'Failed to fetch' ||
+    msg === 'SupabaseNetworkError' ||
     (typeof msg === 'string' && msg.toLowerCase().includes('failed to fetch')) ||
     name === 'AuthRetryableFetchError'
   )
@@ -86,6 +87,37 @@ function isNativePlatform(): boolean {
   return cap?.isNativePlatform?.() === true
 }
 
+/** Обёртка fetch: перехватывает "Failed to fetch" и заменяет на контролируемую ошибку, чтобы не засорять консоль и обрабатывать в unhandledrejection. */
+function isFailedToFetch(err: unknown): boolean {
+  if (!err) return false
+  const msg = err instanceof Error ? err.message : String(err)
+  return (
+    msg === 'Failed to fetch' ||
+    (typeof msg === 'string' && msg.toLowerCase().includes('failed to fetch')) ||
+    (err instanceof TypeError && msg === 'Failed to fetch')
+  )
+}
+
+const SUPABASE_NETWORK_ERROR_MESSAGE = 'SupabaseNetworkError'
+
+function createSupabaseFetch(): typeof fetch {
+  const baseFetch = typeof globalThis.fetch !== 'undefined' ? globalThis.fetch : undefined
+  if (!baseFetch) return undefined as unknown as typeof fetch
+  return function supabaseFetch(
+    input: RequestInfo | URL,
+    init?: RequestInit
+  ): Promise<Response> {
+    return baseFetch(input, init).catch((err: unknown) => {
+      if (isFailedToFetch(err)) {
+        const controlled = new Error(SUPABASE_NETWORK_ERROR_MESSAGE) as Error & { name: string }
+        controlled.name = 'AuthRetryableFetchError'
+        throw controlled
+      }
+      throw err
+    })
+  } as typeof fetch
+}
+
 export function createClient() {
   const url = getSupabaseUrl()
   const key = getSupabaseKey()
@@ -109,14 +141,19 @@ export function createClient() {
     lock: async <R>(_name: string, _acquireTimeout: number, fn: () => Promise<R>) => fn(),
   }
 
+  const customFetch = createSupabaseFetch()
+  const globalOptions = customFetch ? { global: { fetch: customFetch } as { fetch?: typeof fetch } } : {}
+
   if (typeof window !== 'undefined' && isNativePlatform()) {
     return createBrowserClient(url, key, {
+      ...globalOptions,
       auth: authOptions,
       cookies: getNativeAuthCookieMethods(),
     })
   }
   
   return createBrowserClient(url, key, {
+    ...globalOptions,
     auth: {
       ...authOptions,
       storage: typeof window !== 'undefined' ? window.localStorage : undefined,

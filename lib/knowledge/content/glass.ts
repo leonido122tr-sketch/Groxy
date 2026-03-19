@@ -311,7 +311,11 @@ Ar – заполнение аргоном.
 Термический разрыв: Вставка из материала с низкой теплопроводностью в алюминиевых профилях, предотвращающая промерзание.`
 
 function parseGlassSections(): KnowledgeSection[] {
-  const blocks = GLASS_CONTENT.split(/\n\n(?=(?:10|[1-9])\. )/)
+  const normalized = GLASS_CONTENT.replace(/\r\n?/g, '\n')
+  const blocks = normalized.split(/\n\n(?=(?:10|[1-9])\. )/)
+  if (blocks.length <= 1) {
+    return [{ title: 'Стекло', imageUrl: '/knowledge/glass.jpg', content: normalized.trim() }]
+  }
   return blocks.slice(1, 11).map((block, i) => {
     const firstBreak = block.indexOf('\n\n')
     const title = firstBreak > 0 ? block.slice(0, firstBreak).trim() : block.split('\n')[0]?.trim() ?? ''

@@ -1,8 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { Bell } from 'lucide-react'
 import { DashboardIcon, ProfileIcon, ProjectsIcon } from './AppIcons'
@@ -10,12 +9,92 @@ import { LogoutButton } from './LogoutButton'
 import { NotificationDrawer } from './NotificationDrawer'
 import { useAuth } from '@/lib/auth/AuthContext'
 import { useForumNotificationCount } from '@/lib/forum/useForumNotificationCount'
+import { createClient } from '@/lib/supabase/client'
+import { getAvatarDisplayUrl } from '@/lib/avatar/uploadAvatar'
+
+function HeaderLogoBlock({
+  href = '/dashboard',
+  label = 'Платформа',
+}: {
+  href?: string
+  label?: string
+}) {
+  return (
+    <Link
+      href={href}
+      className="-m-1 flex min-h-12 items-center gap-3 rounded-2xl p-1"
+      aria-label="На главную"
+    >
+      <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-transparent">
+        {/* Native img so full-resolution logo.png (512×512) is scaled to 48px for crisp display */}
+        <img
+          src="/logo.png"
+          alt="Groxy Logo"
+          width={96}
+          height={96}
+          className="h-full w-full rounded-full object-cover"
+          fetchPriority="high"
+        />
+      </div>
+      <div className="flex flex-col">
+        <h1 className="text-lg font-semibold tracking-[-0.02em] text-white sm:text-xl">
+          Groxy
+        </h1>
+        <span className="text-[0.68rem] font-medium uppercase tracking-[0.1em] text-zinc-400">
+          {label}
+        </span>
+      </div>
+    </Link>
+  )
+}
+
+export function LandingHeader() {
+  return (
+    <header className="sticky top-0 z-30 border-b border-white/8 bg-[rgba(16,22,31,0.92)] backdrop-blur-xl">
+      <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between gap-4">
+          <HeaderLogoBlock href="/" />
+          <Link
+            href="/login"
+            className="inline-flex min-h-12 min-w-12 items-center justify-center gap-2 rounded-2xl bg-[#1a2230] px-3 py-2.5 text-sm font-medium text-zinc-200 transition hover:bg-[#243040]"
+          >
+            Войти
+          </Link>
+        </div>
+      </div>
+    </header>
+  )
+}
 
 export function AppHeader() {
   const pathname = usePathname()
   const { user } = useAuth()
   const { count: notificationCount } = useForumNotificationCount(user?.id)
   const [notificationDrawerOpen, setNotificationDrawerOpen] = useState(false)
+  const [avatarDisplayUrl, setAvatarDisplayUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!user?.id) {
+      setAvatarDisplayUrl(null)
+      return
+    }
+    const supabase = createClient()
+    supabase
+      .from('profiles')
+      .select('аватар')
+      .eq('идентификатор', user.id)
+      .single()
+      .then(({ data }) => {
+        const row = data as { аватар?: string | null } | null
+        const path = row?.аватар?.trim() || null
+        if (!path) {
+          setAvatarDisplayUrl(null)
+          return
+        }
+        getAvatarDisplayUrl(supabase, path).then(setAvatarDisplayUrl)
+      })
+      .catch(() => setAvatarDisplayUrl(null))
+  }, [user?.id])
   const isDashboard = pathname === '/dashboard'
   const isProjectsArea = pathname?.startsWith('/projects')
   const isProjectLibrary = pathname === '/project'
@@ -36,30 +115,7 @@ export function AppHeader() {
     <header className="sticky top-0 z-30 border-b border-white/8 bg-[rgba(16,22,31,0.92)] backdrop-blur-xl">
       <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between gap-4">
-          <Link
-            href="/dashboard"
-            className="-m-1 flex min-h-12 items-center gap-3 rounded-2xl p-1"
-            aria-label="На главную"
-          >
-            <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-[#1a2230]">
-              <Image
-                src="/logo.png"
-                alt="Groxy Logo"
-                width={32}
-                height={32}
-                className="h-8 w-8 rounded-2xl object-contain"
-                priority
-              />
-            </div>
-            <div className="flex flex-col">
-              <h1 className="text-lg font-semibold tracking-[-0.02em] text-white sm:text-xl">
-                Groxy
-              </h1>
-              <span className="text-[0.68rem] font-medium uppercase tracking-[0.1em] text-zinc-400">
-                {locationLabel}
-              </span>
-            </div>
-          </Link>
+          <HeaderLogoBlock label={locationLabel} />
 
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-2">
@@ -101,11 +157,25 @@ export function AppHeader() {
             {(isDashboard || isProfile) && (
               <Link
                 href="/profile/setup"
-                className={navItemClass(isProfile)}
+                className={
+                  avatarDisplayUrl
+                    ? `inline-flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl p-0 transition ${isProfile ? 'bg-[#2f6fed] text-white shadow-[0_6px_18px_rgba(47,111,237,0.28)]' : 'bg-[#1a2230] text-zinc-200'}`
+                    : navItemClass(isProfile)
+                }
                 aria-label="Профиль"
               >
-                <ProfileIcon className="h-4 w-4" />
-                <span className="hidden md:inline">Профиль</span>
+                {avatarDisplayUrl ? (
+                  <img
+                    src={avatarDisplayUrl}
+                    alt=""
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <>
+                    <ProfileIcon className="h-4 w-4" />
+                    <span className="hidden md:inline">Профиль</span>
+                  </>
+                )}
               </Link>
             )}
 

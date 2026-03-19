@@ -28,6 +28,15 @@ export type ForumPost = {
   updated_at: string
 }
 
+/** Дополнение к теме (автор добавляет текст, не редактирует основной). */
+export type ForumTopicSupplement = {
+  id: string
+  topic_id: string
+  user_id: string
+  content: string
+  created_at: string
+}
+
 export type ForumTopicImage = {
   id: string
   topic_id: string

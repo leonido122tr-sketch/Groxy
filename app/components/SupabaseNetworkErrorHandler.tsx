@@ -13,7 +13,7 @@ export function SupabaseNetworkErrorHandler() {
       const reason = event.reason
       const msg = reason?.message ?? String(reason)
       const isAuthRetryable = reason && (reason.name === 'AuthRetryableFetchError' || (reason as Error).constructor?.name === 'AuthRetryableFetchError')
-      const isFetchError = msg === 'Failed to fetch' || (typeof msg === 'string' && msg.toLowerCase().includes('fetch'))
+      const isFetchError = msg === 'Failed to fetch' || msg === 'SupabaseNetworkError' || (typeof msg === 'string' && msg.toLowerCase().includes('fetch'))
       const isTypeErrorFetch = reason instanceof TypeError && msg === 'Failed to fetch'
       if (isFetchError || isTypeErrorFetch || isAuthRetryable) {
         event.preventDefault()

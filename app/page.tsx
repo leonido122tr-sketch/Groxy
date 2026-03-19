@@ -9,6 +9,7 @@ import { PageLoader } from '@/app/components/PageLoader'
 import {
   ForwardIcon,
 } from '@/app/components/AppIcons'
+import { LandingHeader } from '@/app/components/AppHeader'
 import {
   AppPage,
   HeroPanel,
@@ -78,26 +79,30 @@ export default function Home() {
   }
 
   return (
-    <AppPage width="md" className="py-6">
+    <AppPage header={<LandingHeader />} width="md" className="py-6">
       <div className="space-y-5">
-        <div className="flex items-center gap-4 rounded-[24px] bg-[#121922] p-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-[22px] bg-[#1a2230]">
-            <Image
-              src="/logo.png"
-              alt="Groxy"
-              width={40}
-              height={40}
-              className="h-10 w-10 rounded-2xl object-contain"
-              priority
-            />
-          </div>
-          <div>
-            <p className="text-base font-semibold text-white">
-              Groxy
-            </p>
-            <p className="text-sm text-zinc-300">
-              Проекты, расчёты и база знаний по строительству
-            </p>
+        <div className="relative overflow-hidden rounded-[24px]">
+          <img src="/landing/home-intro.jpg" alt="" className="absolute inset-0 h-full w-full object-cover opacity-50" aria-hidden />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#121922]/95 via-[#121922]/75 to-[#121922]/50" aria-hidden />
+          <div className="relative z-10 flex items-center gap-4 p-4">
+            <div className="flex w-16 aspect-square items-center justify-center overflow-hidden rounded-full bg-[#1a2230]">
+              <Image
+                src="/logo.png"
+                alt="Groxy"
+                width={48}
+                height={48}
+                className="h-full w-full rounded-full object-cover"
+                priority
+              />
+            </div>
+            <div>
+              <p className="text-base font-semibold text-white">
+                Groxy
+              </p>
+              <p className="text-sm text-zinc-300">
+                Проекты, расчёты и база знаний по строительству
+              </p>
+            </div>
           </div>
         </div>
 
@@ -122,39 +127,6 @@ export default function Home() {
             />
           </div>
         </SurfaceCard>
-
-        <div className="grid gap-3">
-          <SurfaceCard className="relative overflow-hidden p-0">
-            <img src="/landing/calculations.jpg" alt="" className="absolute inset-0 h-full w-full object-cover opacity-50" />
-            <div className="absolute inset-0 bg-gradient-to-r from-[#121922]/95 via-[#121922]/75 to-[#121922]/50" aria-hidden />
-            <div className="relative z-10 flex min-h-[88px] items-center gap-4 p-4">
-              <div className="min-w-0 flex-1">
-                <span className="text-base font-medium text-white drop-shadow-sm">Строительные расчёты</span>
-                <p className="mt-0.5 line-clamp-2 text-xs text-zinc-300">Фундамент, стены и крыша считаются внутри единого сценария проекта.</p>
-              </div>
-            </div>
-          </SurfaceCard>
-          <SurfaceCard className="relative overflow-hidden p-0">
-            <img src="/landing/pdf.jpg" alt="" className="absolute inset-0 h-full w-full object-cover opacity-50" />
-            <div className="absolute inset-0 bg-gradient-to-r from-[#121922]/95 via-[#121922]/75 to-[#121922]/50" aria-hidden />
-            <div className="relative z-10 flex min-h-[88px] items-center gap-4 p-4">
-              <div className="min-w-0 flex-1">
-                <span className="text-base font-medium text-white drop-shadow-sm">PDF и сохранение</span>
-                <p className="mt-0.5 line-clamp-2 text-xs text-zinc-300">Проект можно сохранить, открыть позже и использовать как рабочий документ.</p>
-              </div>
-            </div>
-          </SurfaceCard>
-          <SurfaceCard className="relative overflow-hidden p-0">
-            <img src="/landing/android.jpg" alt="" className="absolute inset-0 h-full w-full object-cover opacity-50" />
-            <div className="absolute inset-0 bg-gradient-to-r from-[#121922]/95 via-[#121922]/75 to-[#121922]/50" aria-hidden />
-            <div className="relative z-10 flex min-h-[88px] items-center gap-4 p-4">
-              <div className="min-w-0 flex-1">
-                <span className="text-base font-medium text-white drop-shadow-sm">Android-first работа</span>
-                <p className="mt-0.5 line-clamp-2 text-xs text-zinc-300">Интерфейс адаптирован под мобильный сценарий и должен вести себя как обычное приложение.</p>
-              </div>
-            </div>
-          </SurfaceCard>
-        </div>
 
         <Link href="/support" className="block rounded-[22px] active:scale-[0.995]">
           <SurfaceCard className="relative overflow-hidden p-0">

@@ -20,8 +20,8 @@ export function isImageUrl(line: string): boolean {
 export const CONTENT_IMAGES_DELIMITER = '\n\n---IMAGES---\n'
 
 /** Парсит content: текст отдельно, список URL фото отдельно (новый формат или legacy). */
-export function parseContent(content: string): { text: string; imageUrls: string[] } {
-  if (!content.trim()) return { text: '', imageUrls: [] }
+export function parseContent(content: string | null | undefined): { text: string; imageUrls: string[] } {
+  if (content == null || content === undefined || !content.trim()) return { text: '', imageUrls: [] }
   if (content.includes(CONTENT_IMAGES_DELIMITER)) {
     const [text = '', rest = ''] = content.split(CONTENT_IMAGES_DELIMITER)
     const imageUrls = rest.split('\n').map((l) => l.trim()).filter(isImageUrl)
@@ -122,10 +122,11 @@ const imageFigureClass = 'max-w-full border border-white/10 object-contain max-h
  * Рендерит текст поста/темы. Если content в новом формате (---IMAGES---), текст и фото раздельно;
  * иначе legacy: контент может содержать URL картинок в тексте.
  */
-export function renderForumContent(content: string, className = 'whitespace-pre-wrap break-words text-sm text-zinc-200 min-w-0') {
-  const hasDelimiter = content.includes(CONTENT_IMAGES_DELIMITER)
+export function renderForumContent(content: string | null | undefined, className = 'whitespace-pre-wrap break-words text-sm text-zinc-200 min-w-0') {
+  const safe = content ?? ''
+  const hasDelimiter = safe.includes(CONTENT_IMAGES_DELIMITER)
   if (hasDelimiter) {
-    const { text, imageUrls } = parseContent(content)
+    const { text, imageUrls } = parseContent(safe)
     return (
       <div className={className}>
         {imageUrls.length > 0 ? (
@@ -135,7 +136,7 @@ export function renderForumContent(content: string, className = 'whitespace-pre-
       </div>
     )
   }
-  const lines = content.split('\n')
+  const lines = safe.split('\n')
   return (
     <div className={className}>
       {lines.map((line, i) => {
