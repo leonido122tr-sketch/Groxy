@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient, isSupabaseNetworkError } from '@/lib/supabase/client'
 import { AUTH_CHECK_TIMEOUT_MS } from '@/lib/auth/constants'
+import { rememberProjectCacheOwner, sealProjectCache } from '@/lib/projects/localProjects'
 import type { User } from '@supabase/supabase-js'
 
 export type UseRequireAuthResult = {
@@ -43,6 +44,7 @@ export function useRequireAuth(): UseRequireAuthResult {
             sessionError.message?.includes('Invalid Refresh Token')
           ) {
             try {
+              sealProjectCache(null)
               await supabase.auth.signOut()
             } catch (signOutError) {
               console.error('Ошибка при выходе:', signOutError)
@@ -67,6 +69,7 @@ export function useRequireAuth(): UseRequireAuthResult {
             userError.message?.includes('Invalid Refresh Token')
           ) {
             try {
+              sealProjectCache(null)
               await supabase.auth.signOut()
             } catch (signOutError) {
               console.error('Ошибка при выходе:', signOutError)
@@ -79,6 +82,7 @@ export function useRequireAuth(): UseRequireAuthResult {
         }
 
         clearTimeout(timeoutId)
+        if (currentUser) rememberProjectCacheOwner(currentUser.id)
         setUser(currentUser ?? null)
         setLoading(false)
 
@@ -96,6 +100,7 @@ export function useRequireAuth(): UseRequireAuthResult {
         ) {
           try {
             const supabase = createClient()
+            sealProjectCache(null)
             await supabase.auth.signOut()
           } catch (signOutError) {
             console.error('Ошибка при выходе:', signOutError)

@@ -131,6 +131,71 @@ export type LegacyLocalProject = {
 }
 
 const STORAGE_KEY = 'groxy.projects.v1'
+const LIST_SNAPSHOT_KEY = 'groxy.projects.snapshot.v1'
+const CACHE_OWNER_KEY = 'groxy.cacheOwner'
+const DEVICE_CLAIM_KEY = 'groxy.deviceProjectsOwner'
+
+function userStorageKey(userId: string) {
+  return `${STORAGE_KEY}.${userId}`
+}
+
+function userSnapshotKey(userId: string) {
+  return `${LIST_SNAPSHOT_KEY}.${userId}`
+}
+
+export function getProjectCacheOwner(): string | null {
+  if (typeof window === 'undefined') return null
+  return window.localStorage.getItem(CACHE_OWNER_KEY)
+}
+
+function moveLegacyProjects(userId: string) {
+  const legacy = window.localStorage.getItem(STORAGE_KEY)
+  if (!legacy) return
+  const dest = userStorageKey(userId)
+  if (!window.localStorage.getItem(dest)) {
+    window.localStorage.setItem(dest, legacy)
+  }
+  window.localStorage.removeItem(STORAGE_KEY)
+}
+
+/** Привязать уже сохранённые на телефоне проекты к вошедшему аккаунту. */
+export function rememberProjectCacheOwner(userId: string) {
+  if (typeof window === 'undefined' || !userId) return
+  const previous = window.localStorage.getItem(CACHE_OWNER_KEY)
+  if (previous && previous !== userId) {
+    moveLegacyProjects(previous)
+  } else if (!previous) {
+    moveLegacyProjects(userId)
+  }
+  if (!window.localStorage.getItem(DEVICE_CLAIM_KEY)) {
+    window.localStorage.setItem(DEVICE_CLAIM_KEY, userId)
+  }
+  window.localStorage.setItem(CACHE_OWNER_KEY, userId)
+  window.localStorage.removeItem(LIST_SNAPSHOT_KEY)
+}
+
+/** Перед выходом убрать общий список, чтобы следующий аккаунт его не увидел. */
+export function sealProjectCache(userId: string | null) {
+  if (typeof window === 'undefined') return
+  if (userId) {
+    moveLegacyProjects(userId)
+    if (!window.localStorage.getItem(DEVICE_CLAIM_KEY)) {
+      window.localStorage.setItem(DEVICE_CLAIM_KEY, userId)
+    }
+  }
+  window.localStorage.removeItem(LIST_SNAPSHOT_KEY)
+  window.localStorage.removeItem(CACHE_OWNER_KEY)
+}
+
+export function deviceProjectVisible(ownerId: string | undefined): boolean {
+  if (typeof window === 'undefined') return false
+  const current = window.localStorage.getItem(CACHE_OWNER_KEY)
+  if (!current) return false
+  if (ownerId) return ownerId === current
+  const claim = window.localStorage.getItem(DEVICE_CLAIM_KEY)
+  if (!claim) return true
+  return claim === current
+}
 
 function normalizeProject(p: unknown): LocalProject | null {
   if (!p || typeof p !== 'object') return null
@@ -172,12 +237,16 @@ function safeParse(json: string | null): LocalProject[] {
 
 function readAll(): LocalProject[] {
   if (typeof window === 'undefined') return []
-  return safeParse(window.localStorage.getItem(STORAGE_KEY))
+  const owner = getProjectCacheOwner()
+  if (!owner) return []
+  return safeParse(window.localStorage.getItem(userStorageKey(owner)))
 }
 
 function writeAll(projects: LocalProject[]) {
   if (typeof window === 'undefined') return
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(projects))
+  const owner = getProjectCacheOwner()
+  if (!owner) return
+  window.localStorage.setItem(userStorageKey(owner), JSON.stringify(projects))
   try {
     window.dispatchEvent(new CustomEvent('groxy:projects-changed'))
   } catch {}
@@ -185,6 +254,26 @@ function writeAll(projects: LocalProject[]) {
 
 export function listLocalProjects(): LocalProject[] {
   return readAll().sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
+}
+
+/** Последний показанный список «Мои проекты»: чтобы экран открылся до ответа сервера. */
+export function readProjectListSnapshot(): LocalProject[] {
+  if (typeof window === 'undefined') return []
+  const owner = getProjectCacheOwner()
+  if (!owner) return []
+  return safeParse(window.localStorage.getItem(userSnapshotKey(owner)))
+}
+
+export function writeProjectListSnapshot(projects: LocalProject[]) {
+  if (typeof window === 'undefined') return
+  const owner = getProjectCacheOwner()
+  if (!owner) return
+  try {
+    window.localStorage.setItem(userSnapshotKey(owner), JSON.stringify(projects))
+    window.localStorage.removeItem(LIST_SNAPSHOT_KEY)
+  } catch {
+    // Память браузера переполнена — список всё равно останется на экране в этой сессии.
+  }
 }
 
 export function getLocalProject(id: string): LocalProject | null {

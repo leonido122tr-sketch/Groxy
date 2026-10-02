@@ -449,6 +449,8 @@ export default function RegisterPage() {
               <Link href="/privacy" className="hover:text-zinc-400">Политика конфиденциальности</Link>
               {' · '}
               <Link href="/terms" className="hover:text-zinc-400">Условия использования</Link>
+              {' · '}
+              <Link href="/account-deletion" className="hover:text-zinc-400">Удаление аккаунта</Link>
             </p>
           </div>
           </div>

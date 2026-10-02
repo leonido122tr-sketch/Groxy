@@ -3,12 +3,21 @@
 import { useRouter } from 'next/navigation'
 import { LogoutIcon } from './AppIcons'
 import { createClient } from '@/lib/supabase/client'
+import { sealProjectCache } from '@/lib/projects/localProjects'
 
 export function LogoutButton() {
   const router = useRouter()
   const supabase = createClient()
 
   const handleLogout = async () => {
+    let userId: string | null = null
+    try {
+      const { data } = await supabase.auth.getUser()
+      userId = data.user?.id ?? null
+    } catch {
+      userId = null
+    }
+    sealProjectCache(userId)
     await supabase.auth.signOut()
     router.push('/')
     router.refresh()

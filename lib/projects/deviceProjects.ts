@@ -1,4 +1,4 @@
-import type { LocalProject } from './localProjects'
+import { deviceProjectVisible, getProjectCacheOwner, type LocalProject } from './localProjects'
 import { PROJECTS_LIMIT } from './projectsLimit'
 
 async function isNative() {
@@ -39,7 +39,9 @@ export async function saveProjectToDevice(project: LocalProject) {
       } catch {}
     }
     
-    const resultStr = nativeStorage.saveProject(JSON.stringify(project))
+    const ownerId = getProjectCacheOwner()
+    const stamped = ownerId ? { ...project, ownerId } : project
+    const resultStr = nativeStorage.saveProject(JSON.stringify(stamped))
     const result = JSON.parse(resultStr)
     if (result.error) {
       console.error('Ошибка сохранения проекта на устройство:', result.error)
@@ -97,6 +99,7 @@ export async function listDeviceProjects(): Promise<LocalProject[]> {
     // Фильтруем только валидные проекты
     return projects
       .filter((p: unknown) => isValidProject(p))
+      .filter((p) => deviceProjectVisible((p as { ownerId?: string }).ownerId))
       .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
   } catch (error) {
     console.error('Ошибка загрузки проектов с устройства:', error)

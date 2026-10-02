@@ -7,7 +7,7 @@ import { createClient, isSupabaseNetworkError } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { Alert } from '@/app/components/Alert'
-import { PageLoader } from '@/app/components/PageLoader'
+import { MinimalLoader } from '@/app/components/MinimalLoader'
 import { AppPage, SurfaceCard } from '@/app/components/AppShell'
 import { BackButton } from '@/app/components/BackButton'
 import { BackIcon } from '@/app/components/AppIcons'
@@ -167,7 +167,7 @@ export default function LoginPage() {
   }
 
   if (checkingAuth) {
-    return <PageLoader />
+    return <MinimalLoader />
   }
 
   return (
@@ -298,6 +298,8 @@ export default function LoginPage() {
               <Link href="/privacy" className="hover:text-zinc-400">Политика конфиденциальности</Link>
               {' · '}
               <Link href="/terms" className="hover:text-zinc-400">Условия использования</Link>
+              {' · '}
+              <Link href="/account-deletion" className="hover:text-zinc-400">Удаление аккаунта</Link>
             </p>
           </div>
           </div>

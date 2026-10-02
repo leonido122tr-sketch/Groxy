@@ -4,12 +4,14 @@ import { useState, useEffect, useRef } from 'react'
 import { createClient, isSupabaseNetworkError } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { PageLoader } from '@/app/components/PageLoader'
+import { MinimalLoader } from '@/app/components/MinimalLoader'
 import { Alert } from '@/app/components/Alert'
 import { AppPage, SurfaceCard } from '@/app/components/AppShell'
 import { BackButton } from '@/app/components/BackButton'
 import { BackIcon, IconBadge, UserFormIcon } from '@/app/components/AppIcons'
-import { uploadAvatar, getAvatarDisplayUrl } from '@/lib/avatar/uploadAvatar'
+import { uploadAvatar } from '@/lib/avatar/uploadAvatar'
+import { watchAvatar } from '@/lib/avatar/avatarCache'
+import { deleteOwnAccount } from '@/lib/auth/deleteOwnAccount'
 
 /** Логин в UI = колонка profiles.отображаемое_имя в Supabase */
 type ProfileRow = { отображаемое_имя?: string | null; аватар?: string | null; город?: string | null }
@@ -33,12 +35,16 @@ export default function ProfileSetupPage() {
   const [avatarRemoved, setAvatarRemoved] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [user, setUser] = useState<{ id: string; email?: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
   const supabase = createClient()
 
   useEffect(() => {
+    let cancelled = false
+    let stopWatch = () => {}
     const getUser = async () => {
       try {
         const { data: { user: u } } = await supabase.auth.getUser()
@@ -61,7 +67,10 @@ export default function ProfileSetupPage() {
           const avatarVal = row?.аватар?.trim() || null
           setAvatarUrl(avatarVal)
           if (avatarVal) {
-            getAvatarDisplayUrl(supabase, avatarVal).then((url) => setAvatarDisplayUrl(url))
+            stopWatch()
+            stopWatch = watchAvatar(supabase, avatarVal, (url) => {
+              if (!cancelled) setAvatarDisplayUrl(url)
+            })
           } else {
             setAvatarDisplayUrl(null)
           }
@@ -87,6 +96,10 @@ export default function ProfileSetupPage() {
       }
     }
     getUser()
+    return () => {
+      cancelled = true
+      stopWatch()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -229,7 +242,7 @@ export default function ProfileSetupPage() {
   }
 
   if (!user) {
-    return <PageLoader />
+    return <MinimalLoader />
   }
 
   return (
@@ -375,7 +388,7 @@ export default function ProfileSetupPage() {
               )}
             </div>
 
-            <button type="submit" disabled={loading} className="btn-primary btn-hover">
+            <button type="submit" disabled={loading || deleting} className="btn-primary btn-hover">
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
                   <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
@@ -386,6 +399,54 @@ export default function ProfileSetupPage() {
               )}
             </button>
           </form>
+
+          <div className="mt-8 border-t border-white/10 pt-5">
+            {confirmDelete ? (
+              <div className="space-y-3">
+                <p className="text-sm leading-6 text-amber-200">
+                  Аккаунт, профиль, проекты на сервере, сообщения и фото форума будут удалены. Вернуть их нельзя.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={deleting}
+                    onClick={() => {
+                      setDeleting(true)
+                      setError(null)
+                      void deleteOwnAccount()
+                        .then(() => {
+                          router.push('/')
+                          router.refresh()
+                        })
+                        .catch((err: unknown) => {
+                          setError(err instanceof Error ? err.message : 'Не удалось удалить аккаунт.')
+                          setDeleting(false)
+                        })
+                    }}
+                    className="rounded-2xl bg-red-700 px-4 py-3 text-sm font-semibold text-white disabled:opacity-40"
+                  >
+                    {deleting ? 'Удаляю…' : 'Да, удалить аккаунт'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={deleting}
+                    onClick={() => setConfirmDelete(false)}
+                    className="rounded-2xl border border-white/12 px-4 py-3 text-sm text-zinc-200"
+                  >
+                    Отмена
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                className="text-sm font-medium text-red-300"
+              >
+                Удалить аккаунт
+              </button>
+            )}
+          </div>
 
           <p className="mt-6 text-center">
             <BackButton
